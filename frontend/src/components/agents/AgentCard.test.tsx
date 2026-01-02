@@ -77,14 +77,16 @@ describe('AgentCard', () => {
 
   it('calls onDelete when delete button is clicked', () => {
     render(<AgentCard agent={mockAgent} {...mockHandlers} />);
-    const deleteButton = screen.getByTitle('Delete');
+    // In test environment, i18n returns the key directly
+    const deleteButton = screen.getByTitle('agents.deleteAgent');
     fireEvent.click(deleteButton);
     expect(mockHandlers.onDelete).toHaveBeenCalledWith(1);
   });
 
   it('calls onDuplicate when duplicate button is clicked', () => {
     render(<AgentCard agent={mockAgent} {...mockHandlers} />);
-    const duplicateButton = screen.getByTitle('Duplicate');
+    // In test environment, i18n returns the key directly
+    const duplicateButton = screen.getByTitle('agents.duplicateAgent');
     fireEvent.click(duplicateButton);
     expect(mockHandlers.onDuplicate).toHaveBeenCalledWith(1);
   });
