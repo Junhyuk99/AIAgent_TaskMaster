@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usageService } from '../services/usageService';
 import type { UsageStatistics, Period, DailyStats, AgentStats, ModelStats } from '../services/usageService';
@@ -177,11 +177,7 @@ export default function UsageDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  useEffect(() => {
-    loadStatistics();
-  }, [period]);
-
-  const loadStatistics = async () => {
+  const loadStatistics = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -192,7 +188,11 @@ export default function UsageDashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [period]);
+
+  useEffect(() => {
+    loadStatistics();
+  }, [loadStatistics]);
 
   const handleExport = async () => {
     try {

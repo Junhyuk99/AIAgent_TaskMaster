@@ -46,7 +46,7 @@ interface KnowledgeState {
   clearSearchResult: () => void;
 }
 
-export const useKnowledgeStore = create<KnowledgeState>((set, _get) => ({
+export const useKnowledgeStore = create<KnowledgeState>((set) => ({
   knowledgeBases: [],
   selectedKnowledgeBase: null,
   documents: [],

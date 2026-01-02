@@ -34,7 +34,9 @@
       "Bash(refreshenv)",
       "Bash(export JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\")",
       "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\" PATH=\"$JAVA_HOME/bin:$PATH\" ./gradlew.bat:*)",
-      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\" PATH=\"$JAVA_HOME/bin:$PATH\" ./gradlew.bat test:*)"
+      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\" PATH=\"$JAVA_HOME/bin:$PATH\" ./gradlew.bat test:*)",
+      "Bash(git commit:*)",
+      "Bash(npm run lint)"
     ]
   },
   "enableAllProjectMcpServers": true,

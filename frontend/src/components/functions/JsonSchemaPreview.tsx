@@ -1,44 +1,12 @@
 import { useMemo, useState } from 'react';
 import type { Parameter } from './ParameterBuilder';
+import { generateJsonSchema } from './jsonSchemaUtils';
 
 interface JsonSchemaPreviewProps {
   functionName: string;
   description: string;
   parameters: Parameter[];
   returnType: string;
-}
-
-export function generateJsonSchema(
-  functionName: string,
-  description: string,
-  parameters: Parameter[],
-  returnType: string
-): object {
-  const properties: Record<string, object> = {};
-  const required: string[] = [];
-
-  parameters.forEach((param) => {
-    if (param.name) {
-      properties[param.name] = {
-        type: param.type,
-        ...(param.description && { description: param.description }),
-      };
-      if (param.required) {
-        required.push(param.name);
-      }
-    }
-  });
-
-  return {
-    name: functionName || 'unnamed_function',
-    description: description || '',
-    parameters: {
-      type: 'object',
-      properties,
-      ...(required.length > 0 && { required }),
-    },
-    ...(returnType && { returns: { type: returnType } }),
-  };
 }
 
 export default function JsonSchemaPreview({
@@ -116,7 +84,7 @@ export default function JsonSchemaPreview({
 
               // Highlight brackets and braces
               highlightedLine = highlightedLine.replace(
-                /([{}\[\]])/g,
+                /([{}[\]])/g,
                 '<span class="text-yellow-400">$1</span>'
               );
 

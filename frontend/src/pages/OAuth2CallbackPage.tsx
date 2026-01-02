@@ -8,30 +8,29 @@ export default function OAuth2CallbackPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setTokenFromOAuth } = useAuthStore();
-  const [error, setError] = useState<string | null>(null);
+
+  // Compute error from URL params synchronously
+  const token = searchParams.get('token');
+  const errorParam = searchParams.get('error');
+  const [error] = useState<string | null>(() => {
+    if (errorParam) return errorParam;
+    if (!token) return 'No token received';
+    return null;
+  });
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    const errorParam = searchParams.get('error');
-
-    if (errorParam) {
-      setError(errorParam);
-      setTimeout(() => {
+    if (error) {
+      const timer = setTimeout(() => {
         navigate('/login');
       }, 3000);
-      return;
+      return () => clearTimeout(timer);
     }
 
     if (token) {
       setTokenFromOAuth(token);
       navigate('/dashboard');
-    } else {
-      setError('No token received');
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
     }
-  }, [searchParams, navigate, setTokenFromOAuth]);
+  }, [error, token, navigate, setTokenFromOAuth]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">

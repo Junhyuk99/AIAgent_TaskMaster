@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import conversationService from '../../services/conversationService';
 import type { Conversation } from '../../services/conversationService';
 
@@ -20,11 +20,7 @@ export default function ConversationList({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
 
-  useEffect(() => {
-    loadConversations();
-  }, [agentId]);
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await conversationService.getByAgent(agentId);
@@ -34,7 +30,11 @@ export default function ConversationList({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [agentId]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
 
   const handleDelete = async (e: React.MouseEvent, externalId: string) => {
     e.stopPropagation();

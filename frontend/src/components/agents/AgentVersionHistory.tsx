@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { agentVersionService } from '../../services/agentVersionService';
 import type { AgentVersion } from '../../services/agentVersionService';
@@ -26,13 +26,7 @@ const AgentVersionHistory: React.FC<AgentVersionHistoryProps> = ({
   const [isComparing, setIsComparing] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadVersions();
-    }
-  }, [isOpen, agentId]);
-
-  const loadVersions = async () => {
+  const loadVersions = useCallback(async () => {
     setLoading(true);
     try {
       const data = await agentVersionService.getVersionHistory(agentId);
@@ -45,7 +39,13 @@ const AgentVersionHistory: React.FC<AgentVersionHistoryProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [agentId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadVersions();
+    }
+  }, [isOpen, loadVersions]);
 
   const handleRollback = async (versionNumber: number) => {
     if (!window.confirm(t('agents.version.confirmRollback', { version: versionNumber }))) {

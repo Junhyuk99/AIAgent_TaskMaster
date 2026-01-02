@@ -1,7 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
-import Widget, { addEventListener, removeEventListener } from './Widget';
+import Widget from './Widget';
+import { addEventListener, removeEventListener } from './widgetEvents';
 import type { WidgetConfig, WidgetEventType, WidgetEventCallback } from './types';
 
 // Re-export types

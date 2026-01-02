@@ -24,7 +24,7 @@ interface AgentState {
   clearSelectedAgent: () => void;
 }
 
-export const useAgentStore = create<AgentState>((set, _get) => ({
+export const useAgentStore = create<AgentState>((set) => ({
   agents: [],
   selectedAgent: null,
   isLoading: false,

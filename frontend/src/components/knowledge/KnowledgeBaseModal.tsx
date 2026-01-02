@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useKnowledgeStore } from '../../stores/knowledgeStore';
 import type { KnowledgeBase, ChunkingStrategy } from '../../services/knowledgeService';
 
@@ -32,26 +32,33 @@ export default function KnowledgeBaseModal({
 
   const isEditing = !!editingKnowledgeBase;
 
-  useEffect(() => {
-    if (editingKnowledgeBase) {
-      setName(editingKnowledgeBase.name);
-      setDescription(editingKnowledgeBase.description || '');
-      setChunkSize(editingKnowledgeBase.chunkSize);
-      setChunkOverlap(editingKnowledgeBase.chunkOverlap);
-      setChunkingStrategy(editingKnowledgeBase.chunkingStrategy);
-    } else {
-      resetForm();
-    }
-  }, [editingKnowledgeBase]);
-
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setName('');
     setDescription('');
     setChunkSize(500);
     setChunkOverlap(50);
     setChunkingStrategy('FIXED_SIZE');
     setErrors({});
-  };
+  }, []);
+
+  // Track previous editing knowledge base to detect changes
+  const editingKbId = editingKnowledgeBase?.id ?? null;
+  const [prevEditingKbId, setPrevEditingKbId] = useState<number | null>(editingKbId);
+
+  // Initialize form with editing knowledge base data using controlled state pattern
+  if (editingKbId !== prevEditingKbId) {
+    setPrevEditingKbId(editingKbId);
+    if (editingKnowledgeBase) {
+      setName(editingKnowledgeBase.name);
+      setDescription(editingKnowledgeBase.description || '');
+      setChunkSize(editingKnowledgeBase.chunkSize);
+      setChunkOverlap(editingKnowledgeBase.chunkOverlap);
+      setChunkingStrategy(editingKnowledgeBase.chunkingStrategy);
+      setErrors({});
+    } else {
+      resetForm();
+    }
+  }
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};

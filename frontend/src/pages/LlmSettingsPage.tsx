@@ -11,30 +11,23 @@ interface ServerModalProps {
 }
 
 function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerModalProps) {
-  const [formData, setFormData] = useState<LlmServerRequest>({
-    name: '',
-    type: 'OLLAMA',
-    baseUrl: '',
+  const getInitialFormData = (): LlmServerRequest => ({
+    name: server?.name ?? '',
+    type: server?.type ?? 'OLLAMA',
+    baseUrl: server?.baseUrl ?? '',
     apiKey: '',
   });
 
-  useEffect(() => {
-    if (server) {
-      setFormData({
-        name: server.name,
-        type: server.type,
-        baseUrl: server.baseUrl,
-        apiKey: '',
-      });
-    } else {
-      setFormData({
-        name: '',
-        type: 'OLLAMA',
-        baseUrl: '',
-        apiKey: '',
-      });
-    }
-  }, [server, isOpen]);
+  const [formData, setFormData] = useState<LlmServerRequest>(getInitialFormData);
+
+  // Reset form when modal opens/closes or server changes
+  const formKey = `${isOpen}-${server?.id ?? 'new'}`;
+  const [prevFormKey, setPrevFormKey] = useState(formKey);
+
+  if (formKey !== prevFormKey) {
+    setPrevFormKey(formKey);
+    setFormData(getInitialFormData());
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,14 +224,12 @@ function ServerCard({
   onEdit,
   onDelete,
   onToggleActive,
-  onTestConnection: _onTestConnection,
   onViewModels,
 }: {
   server: LlmServer;
   onEdit: () => void;
   onDelete: () => void;
   onToggleActive: () => void;
-  onTestConnection: () => void;
   onViewModels: () => void;
 }) {
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
@@ -548,7 +539,6 @@ export default function LlmSettingsPage() {
               onEdit={() => handleEditServer(server)}
               onDelete={() => handleDeleteServer(server)}
               onToggleActive={() => handleToggleActive(server)}
-              onTestConnection={() => {}}
               onViewModels={() => handleViewModels(server)}
             />
           ))}

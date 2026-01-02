@@ -40,7 +40,7 @@ export interface KnowledgeBaseCreateRequest {
   chunkingStrategy?: ChunkingStrategy;
 }
 
-export interface KnowledgeBaseUpdateRequest extends KnowledgeBaseCreateRequest {}
+export type KnowledgeBaseUpdateRequest = KnowledgeBaseCreateRequest;
 
 export interface SearchRequest {
   query: string;

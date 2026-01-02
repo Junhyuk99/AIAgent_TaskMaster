@@ -48,7 +48,7 @@ export interface FunctionCreateRequest {
   implementationConfig?: string;
 }
 
-export interface FunctionUpdateRequest extends FunctionCreateRequest {}
+export type FunctionUpdateRequest = FunctionCreateRequest;
 
 export interface FunctionTestRequest {
   parameters: Record<string, unknown>;

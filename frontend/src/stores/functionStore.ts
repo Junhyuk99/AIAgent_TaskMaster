@@ -31,7 +31,7 @@ interface FunctionState {
   clearTestResult: () => void;
 }
 
-export const useFunctionStore = create<FunctionState>((set, _get) => ({
+export const useFunctionStore = create<FunctionState>((set) => ({
   functions: [],
   selectedFunction: null,
   isLoading: false,

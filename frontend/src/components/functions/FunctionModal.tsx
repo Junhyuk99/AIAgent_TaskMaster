@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useFunctionStore, parseParametersFromSchema } from '../../stores/functionStore';
 import type { Function, ImplementationType } from '../../services/functionService';
 import ParameterBuilder from './ParameterBuilder';
@@ -69,9 +69,28 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
 
   const isEditing = !!editingFunction;
 
-  // Initialize form with editing function data
-  useEffect(() => {
+  const resetForm = useCallback(() => {
+    setActiveTab('basic');
+    setName('');
+    setDescription('');
+    setReturnType('string');
+    setParameters([]);
+    setImplementationType('HTTP_API');
+    setHttpConfig({ url: '', method: 'GET', headers: [], bodyTemplate: '' });
+    setCodeConfig({ language: 'javascript', code: '' });
+    setSelectedTemplate('');
+    setErrors({});
+  }, []);
+
+  // Track previous editing function to detect changes
+  const editingFunctionId = editingFunction?.id ?? null;
+  const [prevEditingId, setPrevEditingId] = useState<number | null>(editingFunctionId);
+
+  // Initialize form with editing function data using controlled state pattern
+  if (editingFunctionId !== prevEditingId) {
+    setPrevEditingId(editingFunctionId);
     if (editingFunction) {
+      setActiveTab('basic');
       setName(editingFunction.name);
       setDescription(editingFunction.description || '');
       setReturnType(editingFunction.returnType || 'string');
@@ -116,24 +135,16 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
         } catch {
           // Invalid JSON, use defaults
         }
+      } else {
+        setHttpConfig({ url: '', method: 'GET', headers: [], bodyTemplate: '' });
+        setCodeConfig({ language: 'javascript', code: '' });
+        setSelectedTemplate('');
       }
+      setErrors({});
     } else {
       resetForm();
     }
-  }, [editingFunction]);
-
-  const resetForm = () => {
-    setActiveTab('basic');
-    setName('');
-    setDescription('');
-    setReturnType('string');
-    setParameters([]);
-    setImplementationType('HTTP_API');
-    setHttpConfig({ url: '', method: 'GET', headers: [], bodyTemplate: '' });
-    setCodeConfig({ language: 'javascript', code: '' });
-    setSelectedTemplate('');
-    setErrors({});
-  };
+  }
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
