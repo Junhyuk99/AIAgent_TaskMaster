@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFunctionStore, useFilteredFunctions, countParameters } from '../stores/functionStore';
 import type { Function } from '../services/functionService';
 import { FunctionModal, DeleteConfirmModal } from '../components/functions';
 import { LoadingSpinner } from '../components/ui';
 
-const implementationTypeLabels: Record<string, string> = {
-  HTTP_API: 'HTTP API',
-  CODE: 'Code',
-  TEMPLATE: 'Template',
-};
-
 export default function FunctionsPage() {
+  const { t } = useTranslation();
+
+  const implementationTypeLabels: Record<string, string> = {
+    HTTP_API: t('functions.httpApi'),
+    CODE: t('functions.code'),
+    TEMPLATE: t('functions.template'),
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFunction, setEditingFunction] = useState<Function | null>(null);
   const [deleteFunctionId, setDeleteFunctionId] = useState<number | null>(null);
@@ -76,12 +78,12 @@ export default function FunctionsPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Functions</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('functions.title')}</h1>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-initial">
             <input
               type="text"
-              placeholder="Search functions..."
+              placeholder={t('functions.searchFunctions')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full sm:w-64 px-4 py-2 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -99,7 +101,7 @@ export default function FunctionsPage() {
             onClick={handleCreate}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors whitespace-nowrap"
           >
-            + New Function
+            {t('functions.newFunction')}
           </button>
         </div>
       </div>
@@ -115,17 +117,17 @@ export default function FunctionsPage() {
           <div className="p-6 text-center text-gray-500 dark:text-gray-400">
             <div className="text-5xl mb-4">&#9889;</div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {searchQuery ? 'No functions found' : 'No functions yet'}
+              {searchQuery ? t('functions.noFunctionsFound') : t('functions.noFunctionsYet')}
             </h3>
             <p className="mb-4">
-              {searchQuery ? 'Try a different search term' : 'Create your first function to extend your agents'}
+              {searchQuery ? t('functions.tryDifferentSearch') : t('functions.createFirstToExtend')}
             </p>
             {!searchQuery && (
               <button
                 onClick={handleCreate}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
               >
-                Create Function
+                {t('functions.createFunction')}
               </button>
             )}
           </div>
@@ -137,22 +139,22 @@ export default function FunctionsPage() {
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Name
+                    {t('functions.name')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Description
+                    {t('functions.description')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Parameters
+                    {t('functions.parameters')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Type
+                    {t('functions.type')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Status
+                    {t('functions.status')}
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Actions
+                    {t('functions.actions')}
                   </th>
                 </tr>
               </thead>
@@ -181,7 +183,7 @@ export default function FunctionsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full">
-                        {countParameters(func.parametersSchema)} params
+                        {countParameters(func.parametersSchema)}{t('functions.params')}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -198,7 +200,7 @@ export default function FunctionsPage() {
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-400'
                         }`}
                       >
-                        {func.isActive ? 'Active' : 'Inactive'}
+                        {func.isActive ? t('common.active') : t('common.inactive')}
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -206,13 +208,13 @@ export default function FunctionsPage() {
                         onClick={() => handleEdit(func)}
                         className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 mr-4"
                       >
-                        Edit
+                        {t('common.edit')}
                       </button>
                       <button
                         onClick={() => setDeleteFunctionId(func.id)}
                         className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                       >
-                        Delete
+                        {t('common.delete')}
                       </button>
                     </td>
                   </tr>
@@ -231,8 +233,8 @@ export default function FunctionsPage() {
 
       <DeleteConfirmModal
         isOpen={deleteFunctionId !== null}
-        title="Delete Function"
-        message="Are you sure you want to delete this function? This action cannot be undone. Agents using this function will no longer have access to it."
+        title={t('functions.deleteFunction')}
+        message={t('functions.deleteWarning')}
         onConfirm={handleDelete}
         onCancel={() => setDeleteFunctionId(null)}
         isLoading={isLoading}

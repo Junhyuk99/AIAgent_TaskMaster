@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../../stores/agentStore';
 
 interface CreateAgentModalProps {
@@ -8,6 +9,7 @@ interface CreateAgentModalProps {
 }
 
 export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateAgentModalProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -21,17 +23,17 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
     const newErrors: Record<string, string> = {};
 
     if (!name.trim()) {
-      newErrors.name = 'Name is required';
+      newErrors.name = t('agents.nameRequired');
     } else if (name.length > 100) {
-      newErrors.name = 'Name must be at most 100 characters';
+      newErrors.name = t('agents.nameTooLong');
     }
 
     if (description && description.length > 500) {
-      newErrors.description = 'Description must be at most 500 characters';
+      newErrors.description = t('agents.descriptionTooLong');
     }
 
     if (systemPrompt && systemPrompt.length > 10000) {
-      newErrors.systemPrompt = 'System prompt must be at most 10000 characters';
+      newErrors.systemPrompt = t('agents.systemPromptTooLong');
     }
 
     setErrors(newErrors);
@@ -79,7 +81,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
             <div className="px-4 pb-4 pt-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Create New Agent
+                  {t('agents.createNewAgent')}
                 </h3>
                 <button
                   type="button"
@@ -101,7 +103,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
               <div className="space-y-4">
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Name <span className="text-red-500">*</span>
+                    {t('agents.name')} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -111,7 +113,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
                     className={`block w-full rounded-md border ${
                       errors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                    placeholder="My Agent"
+                    placeholder={t('agents.namePlaceholder')}
                   />
                   {errors.name && (
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
@@ -120,7 +122,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
 
                 <div>
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
+                    {t('agents.description')}
                   </label>
                   <input
                     type="text"
@@ -130,7 +132,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
                     className={`block w-full rounded-md border ${
                       errors.description ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                    placeholder="A helpful assistant..."
+                    placeholder={t('agents.descriptionPlaceholder')}
                   />
                   {errors.description && (
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.description}</p>
@@ -139,7 +141,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
 
                 <div>
                   <label htmlFor="systemPrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    System Prompt
+                    {t('agents.systemPrompt')}
                   </label>
                   <textarea
                     id="systemPrompt"
@@ -149,7 +151,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
                     className={`block w-full rounded-md border ${
                       errors.systemPrompt ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                    placeholder="You are a helpful AI assistant..."
+                    placeholder={t('agents.systemPromptPlaceholder')}
                   />
                   {errors.systemPrompt && (
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.systemPrompt}</p>
@@ -170,10 +172,10 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Creating...
+                    {t('agents.creating')}
                   </span>
                 ) : (
-                  'Create Agent'
+                  t('agents.createAgent')
                 )}
               </button>
               <button
@@ -182,7 +184,7 @@ export default function CreateAgentModal({ isOpen, onClose, onSuccess }: CreateA
                 disabled={isLoading}
                 className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-600 px-4 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 sm:mt-0 sm:w-auto disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </form>

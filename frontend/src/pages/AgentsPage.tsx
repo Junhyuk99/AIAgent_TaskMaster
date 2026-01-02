@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAgentStore, useFilteredAgents } from '../stores/agentStore';
 import { AgentCard, CreateAgentModal, DeleteConfirmModal } from '../components/agents';
 import AgentVersionHistory from '../components/agents/AgentVersionHistory';
@@ -6,6 +7,7 @@ import { LoadingSpinner } from '../components/ui';
 import type { Agent } from '../services/agentService';
 
 export default function AgentsPage() {
+  const { t } = useTranslation();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteAgentId, setDeleteAgentId] = useState<number | null>(null);
   const [versionHistoryAgent, setVersionHistoryAgent] = useState<Agent | null>(null);
@@ -67,12 +69,12 @@ export default function AgentsPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Agents</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('agents.title')}</h1>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-initial">
             <input
               type="text"
-              placeholder="Search agents..."
+              placeholder={t('agents.searchAgents')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full sm:w-64 px-4 py-2 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -108,7 +110,7 @@ export default function AgentsPage() {
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors whitespace-nowrap"
           >
-            + New Agent
+            {t('agents.newAgent')}
           </button>
         </div>
       </div>
@@ -124,17 +126,17 @@ export default function AgentsPage() {
           <div className="p-6 text-center text-gray-500 dark:text-gray-400">
             <div className="text-5xl mb-4">🤖</div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {searchQuery ? 'No agents found' : 'No agents yet'}
+              {searchQuery ? t('agents.noAgentsFound') : t('agents.noAgentsYet')}
             </h3>
             <p className="mb-4">
-              {searchQuery ? 'Try a different search term' : 'Create your first AI agent to get started'}
+              {searchQuery ? t('agents.tryDifferentSearch') : t('agents.createFirstToStart')}
             </p>
             {!searchQuery && (
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
               >
-                Create Agent
+                {t('agents.createAgent')}
               </button>
             )}
           </div>
@@ -161,8 +163,8 @@ export default function AgentsPage() {
 
       <DeleteConfirmModal
         isOpen={deleteAgentId !== null}
-        title="Delete Agent"
-        message="Are you sure you want to delete this agent? This action cannot be undone. All associated conversations and configurations will be permanently removed."
+        title={t('agents.deleteAgent')}
+        message={t('agents.deleteWarning')}
         onConfirm={handleDelete}
         onCancel={() => setDeleteAgentId(null)}
         isLoading={isLoading}

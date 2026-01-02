@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../stores/agentStore';
 import { useAuthStore } from '../stores/authStore';
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const { agents, fetchAgents } = useAgentStore();
   const { user } = useAuthStore();
 
@@ -17,10 +19,10 @@ export default function DashboardPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Welcome back{user?.name ? `, ${user.name}` : ''}!
+          {t('dashboard.welcomeBack')}{user?.name ? `, ${user.name}` : ''}!
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Here's an overview of your AI agents and resources.
+          {t('dashboard.overviewDescription')}
         </p>
       </div>
 
@@ -36,7 +38,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                    Total Agents
+                    {t('dashboard.totalAgents')}
                   </dt>
                   <dd className="text-lg font-semibold text-gray-900 dark:text-white">{agents.length}</dd>
                 </dl>
@@ -56,7 +58,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                    Active Agents
+                    {t('dashboard.activeAgents')}
                   </dt>
                   <dd className="text-lg font-semibold text-gray-900 dark:text-white">{activeAgents}</dd>
                 </dl>
@@ -76,7 +78,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                    Functions
+                    {t('nav.functions')}
                   </dt>
                   <dd className="text-lg font-semibold text-gray-900 dark:text-white">0</dd>
                 </dl>
@@ -96,7 +98,7 @@ export default function DashboardPage() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                    Knowledge Bases
+                    {t('nav.knowledge')}
                   </dt>
                   <dd className="text-lg font-semibold text-gray-900 dark:text-white">0</dd>
                 </dl>
@@ -109,9 +111,9 @@ export default function DashboardPage() {
       {agents.length > 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Agents</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.recentAgents')}</h2>
             <Link to="/agents" className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
-              View all →
+              {t('dashboard.viewAll')}
             </Link>
           </div>
           <div className="space-y-3">
@@ -128,7 +130,7 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white">{agent.name}</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {agent.modelName || 'No model configured'}
+                      {agent.modelName || t('dashboard.noModelConfigured')}
                     </p>
                   </div>
                 </div>
@@ -139,7 +141,7 @@ export default function DashboardPage() {
                       : 'bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
                   }`}
                 >
-                  {agent.isActive ? 'Active' : 'Inactive'}
+                  {agent.isActive ? t('common.active') : t('common.inactive')}
                 </span>
               </Link>
             ))}
@@ -147,7 +149,7 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Start</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t('dashboard.quickStart')}</h2>
           <div className="space-y-3">
             <Link
               to="/settings/llm"
@@ -156,7 +158,7 @@ export default function DashboardPage() {
               <span className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 flex items-center justify-center text-sm mr-3">
                 1
               </span>
-              <span>Configure an LLM server in Settings</span>
+              <span>{t('dashboard.quickStart1')}</span>
             </Link>
             <Link
               to="/agents"
@@ -165,7 +167,7 @@ export default function DashboardPage() {
               <span className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 flex items-center justify-center text-sm mr-3">
                 2
               </span>
-              <span>Create your first AI agent</span>
+              <span>{t('dashboard.quickStart2')}</span>
             </Link>
             <Link
               to="/functions"
@@ -174,7 +176,7 @@ export default function DashboardPage() {
               <span className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 flex items-center justify-center text-sm mr-3">
                 3
               </span>
-              <span>Add functions or knowledge bases to enhance your agent</span>
+              <span>{t('dashboard.quickStart3')}</span>
             </Link>
           </div>
         </div>

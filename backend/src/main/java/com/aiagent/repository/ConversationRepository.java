@@ -4,6 +4,7 @@ import com.aiagent.entity.Conversation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -60,4 +61,8 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
            "WHERE c.user.id = :userId AND c.createdAt >= :since " +
            "GROUP BY c.agent.id, c.agent.name ORDER BY COUNT(c) DESC")
     List<Object[]> countByAgentForUserSince(@Param("userId") Long userId, @Param("since") LocalDateTime since);
+
+    @Modifying
+    @Query(value = "DELETE FROM conversations WHERE agent_id = :agentId", nativeQuery = true)
+    void deleteByAgentId(@Param("agentId") Long agentId);
 }

@@ -1,19 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useKnowledgeStore } from '../stores/knowledgeStore';
 import type { Document, SearchRequest, SearchMatch } from '../services/knowledgeService';
 import { KnowledgeBaseModal, DeleteConfirmModal } from '../components/knowledge';
 
 type DocumentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
-const statusConfig: Record<DocumentStatus, { label: string; color: string; bgColor: string }> = {
-  PENDING: { label: 'Pending', color: 'text-yellow-800 dark:text-yellow-300', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' },
-  PROCESSING: { label: 'Processing', color: 'text-blue-800 dark:text-blue-300', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
-  COMPLETED: { label: 'Completed', color: 'text-green-800 dark:text-green-300', bgColor: 'bg-green-100 dark:bg-green-900/30' },
-  FAILED: { label: 'Failed', color: 'text-red-800 dark:text-red-300', bgColor: 'bg-red-100 dark:bg-red-900/30' },
+const statusConfig: Record<DocumentStatus, { labelKey: string; color: string; bgColor: string }> = {
+  PENDING: { labelKey: 'knowledge.documentStatus.pending', color: 'text-yellow-800 dark:text-yellow-300', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' },
+  PROCESSING: { labelKey: 'knowledge.documentStatus.processing', color: 'text-blue-800 dark:text-blue-300', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  COMPLETED: { labelKey: 'knowledge.documentStatus.completed', color: 'text-green-800 dark:text-green-300', bgColor: 'bg-green-100 dark:bg-green-900/30' },
+  FAILED: { labelKey: 'knowledge.documentStatus.failed', color: 'text-red-800 dark:text-red-300', bgColor: 'bg-red-100 dark:bg-red-900/30' },
 };
 
 export default function KnowledgeBaseDetailPage() {
+  const { t, i18n } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,13 +148,23 @@ export default function KnowledgeBaseDetailPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const locale = i18n.language === 'ko' ? 'ko-KR' : 'en-US';
+    return new Date(dateString).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const getStrategyLabel = (strategy: string) => {
+    const strategyMap: Record<string, string> = {
+      'FIXED_SIZE': t('knowledge.chunkingStrategies.fixedSize'),
+      'SENTENCE': t('knowledge.chunkingStrategies.sentence'),
+      'PARAGRAPH': t('knowledge.chunkingStrategies.paragraph'),
+    };
+    return strategyMap[strategy] || strategy.replace('_', ' ');
   };
 
   if (isLoading && !selectedKnowledgeBase) {
@@ -166,9 +178,9 @@ export default function KnowledgeBaseDetailPage() {
   if (!selectedKnowledgeBase) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500 dark:text-gray-400">Knowledge base not found</p>
+        <p className="text-gray-500 dark:text-gray-400">{t('knowledge.notFound')}</p>
         <Link to="/knowledge" className="text-primary-600 hover:underline mt-2 inline-block">
-          Back to Knowledge Bases
+          {t('knowledge.backToList')}
         </Link>
       </div>
     );
@@ -199,7 +211,7 @@ export default function KnowledgeBaseDetailPage() {
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-400'
                 }`}
               >
-                {selectedKnowledgeBase.isActive ? 'Active' : 'Inactive'}
+                {selectedKnowledgeBase.isActive ? t('common.active') : t('common.inactive')}
               </span>
             </div>
             {selectedKnowledgeBase.description && (
@@ -214,13 +226,13 @@ export default function KnowledgeBaseDetailPage() {
             onClick={() => setIsEditModalOpen(true)}
             className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
           >
-            Edit
+            {t('common.edit')}
           </button>
           <button
             onClick={() => setIsDeleteKbModalOpen(true)}
             className="px-4 py-2 text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-300 dark:border-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       </div>
@@ -228,27 +240,27 @@ export default function KnowledgeBaseDetailPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Documents</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{t('knowledge.documents')}</div>
           <div className="text-2xl font-semibold text-gray-900 dark:text-white">
             {selectedKnowledgeBase.documentCount}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Chunk Size</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{t('knowledge.chunkSize')}</div>
           <div className="text-2xl font-semibold text-gray-900 dark:text-white">
             {selectedKnowledgeBase.chunkSize}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Overlap</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{t('knowledge.overlap')}</div>
           <div className="text-2xl font-semibold text-gray-900 dark:text-white">
             {selectedKnowledgeBase.chunkOverlap}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-          <div className="text-sm text-gray-500 dark:text-gray-400">Strategy</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{t('knowledge.strategy')}</div>
           <div className="text-xl font-semibold text-gray-900 dark:text-white">
-            {selectedKnowledgeBase.chunkingStrategy.replace('_', ' ')}
+            {getStrategyLabel(selectedKnowledgeBase.chunkingStrategy)}
           </div>
         </div>
       </div>
@@ -262,7 +274,7 @@ export default function KnowledgeBaseDetailPage() {
       {/* Document Upload */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Documents</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('knowledge.documents')}</h2>
         </div>
         <div className="p-4">
           <div
@@ -278,7 +290,7 @@ export default function KnowledgeBaseDetailPage() {
               <div>
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mx-auto mb-3"></div>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Uploading... {uploadProgress}%
+                  {t('knowledge.upload.uploading')} {uploadProgress}%
                 </p>
                 <div className="w-48 mx-auto mt-2 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
@@ -303,10 +315,10 @@ export default function KnowledgeBaseDetailPage() {
                   />
                 </svg>
                 <p className="text-gray-600 dark:text-gray-400 mb-2">
-                  Drag and drop files here, or click to browse
+                  {t('knowledge.upload.dragDrop')}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-500">
-                  Supports PDF, TXT, MD, DOC, DOCX (max 10MB)
+                  {t('knowledge.upload.supportedFormats')}
                 </p>
                 <input
                   ref={fileInputRef}
@@ -320,7 +332,7 @@ export default function KnowledgeBaseDetailPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                 >
-                  Browse Files
+                  {t('knowledge.upload.browseFiles')}
                 </button>
               </>
             )}
@@ -334,22 +346,22 @@ export default function KnowledgeBaseDetailPage() {
                   <thead>
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Name
+                        {t('knowledge.documentTable.name')}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Size
+                        {t('knowledge.documentTable.size')}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Chunks
+                        {t('knowledge.documentTable.chunks')}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Status
+                        {t('knowledge.documentTable.status')}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Uploaded
+                        {t('knowledge.documentTable.uploaded')}
                       </th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Actions
+                        {t('knowledge.documentTable.actions')}
                       </th>
                     </tr>
                   </thead>
@@ -409,7 +421,7 @@ export default function KnowledgeBaseDetailPage() {
                                   ></path>
                                 </svg>
                               )}
-                              {status.label}
+                              {t(status.labelKey)}
                             </span>
                             {doc.status === 'FAILED' && doc.errorMessage && (
                               <p className="text-xs text-red-500 mt-1">{doc.errorMessage}</p>
@@ -424,7 +436,7 @@ export default function KnowledgeBaseDetailPage() {
                                 <button
                                   onClick={() => handleRetryProcessing(doc.id)}
                                   className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                  title="Retry processing"
+                                  title={t('knowledge.retryProcessing')}
                                 >
                                   <svg
                                     className="w-5 h-5"
@@ -447,7 +459,7 @@ export default function KnowledgeBaseDetailPage() {
                                   setIsDeleteDocModalOpen(true);
                                 }}
                                 className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                title="Delete document"
+                                title={t('knowledge.deleteDoc')}
                               >
                                 <svg
                                   className="w-5 h-5"
@@ -476,7 +488,7 @@ export default function KnowledgeBaseDetailPage() {
 
           {documents.length === 0 && !isUploading && (
             <p className="text-center text-gray-500 dark:text-gray-400 mt-4">
-              No documents uploaded yet
+              {t('knowledge.noDocuments')}
             </p>
           )}
         </div>
@@ -485,9 +497,9 @@ export default function KnowledgeBaseDetailPage() {
       {/* Search Test Panel */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Search Test</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('knowledge.searchTest.title')}</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Test semantic search on your documents
+            {t('knowledge.searchTest.description')}
           </p>
         </div>
         <div className="p-4">
@@ -497,7 +509,7 @@ export default function KnowledgeBaseDetailPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Enter search query..."
+                placeholder={t('knowledge.searchTest.placeholder')}
                 className="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -523,14 +535,14 @@ export default function KnowledgeBaseDetailPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Searching...
+                  {t('knowledge.searchTest.searching')}
                 </>
               ) : (
                 <>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  Search
+                  {t('common.search')}
                 </>
               )}
             </button>
@@ -541,13 +553,13 @@ export default function KnowledgeBaseDetailPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
                 <span>
-                  Found {searchResult.matches.length} results in {searchResult.searchTimeMs}ms
+                  {t('knowledge.searchTest.foundResults', { count: searchResult.matches.length, time: searchResult.searchTimeMs })}
                 </span>
                 <button
                   onClick={clearSearchResult}
                   className="text-primary-600 hover:underline"
                 >
-                  Clear results
+                  {t('knowledge.searchTest.clearResults')}
                 </button>
               </div>
               {searchResult.matches.map((result: SearchMatch, index: number) => (
@@ -560,7 +572,7 @@ export default function KnowledgeBaseDetailPage() {
                       {result.documentName}
                     </span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      Score: {(result.score * 100).toFixed(1)}%
+                      {t('knowledge.searchTest.score')}: {(result.score * 100).toFixed(1)}%
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
@@ -582,7 +594,7 @@ export default function KnowledgeBaseDetailPage() {
               ))}
               {searchResult.matches.length === 0 && (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-4">
-                  No results found for your query
+                  {t('knowledge.searchTest.noResults')}
                 </p>
               )}
             </div>
@@ -601,8 +613,8 @@ export default function KnowledgeBaseDetailPage() {
       {/* Delete Knowledge Base Modal */}
       <DeleteConfirmModal
         isOpen={isDeleteKbModalOpen}
-        title="Delete Knowledge Base"
-        message={`Are you sure you want to delete "${selectedKnowledgeBase.name}"? This will also delete all documents and embeddings. This action cannot be undone.`}
+        title={t('knowledge.deleteKnowledgeBase')}
+        message={t('knowledge.deleteWarning', { name: selectedKnowledgeBase.name })}
         onConfirm={handleDeleteKnowledgeBase}
         onCancel={() => setIsDeleteKbModalOpen(false)}
         isLoading={isLoading}
@@ -611,8 +623,8 @@ export default function KnowledgeBaseDetailPage() {
       {/* Delete Document Modal */}
       <DeleteConfirmModal
         isOpen={isDeleteDocModalOpen}
-        title="Delete Document"
-        message={`Are you sure you want to delete "${deletingDocument?.fileName}"? This will also delete all associated embeddings. This action cannot be undone.`}
+        title={t('knowledge.deleteDocument.title')}
+        message={t('knowledge.deleteDocument.message', { name: deletingDocument?.fileName })}
         onConfirm={handleDeleteDocument}
         onCancel={() => {
           setIsDeleteDocModalOpen(false);

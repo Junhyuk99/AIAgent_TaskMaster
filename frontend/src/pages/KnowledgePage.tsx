@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useKnowledgeStore, useFilteredKnowledgeBases } from '../stores/knowledgeStore';
 import type { KnowledgeBase } from '../services/knowledgeService';
 import { KnowledgeBaseCard, KnowledgeBaseModal, DeleteConfirmModal } from '../components/knowledge';
 
 export default function KnowledgePage() {
+  const { t } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingKnowledgeBase, setEditingKnowledgeBase] = useState<KnowledgeBase | null>(null);
@@ -61,7 +63,7 @@ export default function KnowledgePage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Knowledge Bases</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('knowledge.title')}</h1>
         <button
           onClick={handleCreate}
           className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
@@ -69,7 +71,7 @@ export default function KnowledgePage() {
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          New Knowledge Base
+          {t('knowledge.newKnowledgeBase')}
         </button>
       </div>
 
@@ -85,7 +87,7 @@ export default function KnowledgePage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search knowledge bases..."
+            placeholder={t('knowledge.searchKnowledgeBases')}
             className="block w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -108,19 +110,19 @@ export default function KnowledgePage() {
               <span className="text-3xl">&#128218;</span>
             </div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {searchQuery ? 'No matching knowledge bases' : 'No knowledge bases yet'}
+              {searchQuery ? t('knowledge.noKnowledgeBasesFound') : t('knowledge.noKnowledgeBasesYet')}
             </h3>
             <p className="mb-6">
               {searchQuery
-                ? 'Try adjusting your search terms'
-                : 'Create a knowledge base to upload documents and enable RAG for your agents'}
+                ? t('knowledge.tryDifferentSearch')
+                : t('knowledge.createFirstForRAG')}
             </p>
             {!searchQuery && (
               <button
                 onClick={handleCreate}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
               >
-                Create Knowledge Base
+                {t('knowledge.createKnowledgeBase')}
               </button>
             )}
           </div>
@@ -149,8 +151,8 @@ export default function KnowledgePage() {
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={isDeleteModalOpen}
-        title="Delete Knowledge Base"
-        message={`Are you sure you want to delete "${deletingKnowledgeBase?.name}"? This will also delete all documents and embeddings. This action cannot be undone.`}
+        title={t('knowledge.deleteKnowledgeBase')}
+        message={t('knowledge.deleteWarning', { name: deletingKnowledgeBase?.name })}
         onConfirm={confirmDelete}
         onCancel={() => {
           setIsDeleteModalOpen(false);

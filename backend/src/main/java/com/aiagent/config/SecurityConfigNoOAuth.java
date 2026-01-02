@@ -2,10 +2,8 @@ package com.aiagent.config;
 
 import com.aiagent.security.ApiKeyAuthenticationFilter;
 import com.aiagent.security.JwtAuthenticationFilter;
-import com.aiagent.security.oauth2.CustomOAuth2UserService;
-import com.aiagent.security.oauth2.OAuth2AuthenticationFailureHandler;
-import com.aiagent.security.oauth2.OAuth2AuthenticationSuccessHandler;
 import com.aiagent.security.ratelimit.RateLimitFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,15 +20,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
-@Profile("!docker")
-public class SecurityConfig {
+@Profile("docker")
+public class SecurityConfigNoOAuth {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
     private final RateLimitFilter rateLimitFilter;
-    private final CustomOAuth2UserService customOAuth2UserService;
-    private final OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler;
-    private final OAuth2AuthenticationFailureHandler oAuth2AuthenticationFailureHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -39,6 +34,8 @@ public class SecurityConfig {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Allow ASYNC dispatch without re-authentication (for SSE streaming)
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(
                     "/api/auth/**",
                     "/api/health",
@@ -46,21 +43,9 @@ public class SecurityConfig {
                     "/actuator/info",
                     "/swagger-ui/**",
                     "/api-docs/**",
-                    "/v3/api-docs/**",
-                    "/oauth2/**",
-                    "/login/oauth2/**"
+                    "/v3/api-docs/**"
                 ).permitAll()
                 .anyRequest().authenticated()
-            )
-            .oauth2Login(oauth2 -> oauth2
-                .authorizationEndpoint(authorization -> authorization
-                    .baseUri("/oauth2/authorize"))
-                .redirectionEndpoint(redirection -> redirection
-                    .baseUri("/login/oauth2/code/*"))
-                .userInfoEndpoint(userInfo -> userInfo
-                    .userService(customOAuth2UserService))
-                .successHandler(oAuth2AuthenticationSuccessHandler)
-                .failureHandler(oAuth2AuthenticationFailureHandler)
             )
             .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

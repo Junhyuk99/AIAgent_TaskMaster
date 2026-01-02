@@ -49,6 +49,8 @@ services:
       dockerfile: Dockerfile
     container_name: aiagent-backend
     environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: docker
       # Database
       DB_HOST: postgres
       DB_PORT: 5432

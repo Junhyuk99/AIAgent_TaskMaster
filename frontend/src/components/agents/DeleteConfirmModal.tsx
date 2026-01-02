@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface DeleteConfirmModalProps {
   isOpen: boolean;
   title: string;
@@ -15,6 +17,8 @@ export default function DeleteConfirmModal({
   onCancel,
   isLoading = false,
 }: DeleteConfirmModalProps) {
+  const { t } = useTranslation();
+
   if (!isOpen) return null;
 
   return (
@@ -52,7 +56,7 @@ export default function DeleteConfirmModal({
               disabled={isLoading}
               className="inline-flex w-full justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Deleting...' : 'Delete'}
+              {isLoading ? t('agents.deleting') : t('common.delete')}
             </button>
             <button
               type="button"
@@ -60,7 +64,7 @@ export default function DeleteConfirmModal({
               disabled={isLoading}
               className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-600 px-4 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 sm:mt-0 sm:w-auto disabled:opacity-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </div>

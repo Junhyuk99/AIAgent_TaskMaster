@@ -3,7 +3,9 @@ package com.aiagent.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -70,4 +72,12 @@ public class Agent extends BaseEntity {
     )
     @Builder.Default
     private Set<KnowledgeBase> knowledgeBases = new HashSet<>();
+
+    @OneToMany(mappedBy = "agent", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<AgentVersion> versions = new ArrayList<>();
+
+    @OneToMany(mappedBy = "agent", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Conversation> conversations = new ArrayList<>();
 }

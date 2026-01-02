@@ -35,7 +35,9 @@ public interface AgentVersionRepository extends JpaRepository<AgentVersion, Long
 
     long countByAgentId(Long agentId);
 
-    void deleteByAgentId(Long agentId);
+    @Modifying
+    @Query(value = "DELETE FROM agent_versions WHERE agent_id = :agentId", nativeQuery = true)
+    void deleteByAgentId(@Param("agentId") Long agentId);
 
     @Query("SELECT v FROM AgentVersion v WHERE v.agent.id = :agentId ORDER BY v.createdAt DESC LIMIT :limit")
     List<AgentVersion> findRecentVersions(@Param("agentId") Long agentId, @Param("limit") int limit);

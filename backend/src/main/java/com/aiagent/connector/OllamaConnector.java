@@ -4,6 +4,7 @@ import com.aiagent.dto.llm.ConnectionTestResponse;
 import com.aiagent.dto.llm.ModelInfo;
 import com.aiagent.function.FunctionCall;
 import com.aiagent.function.LlmChatResult;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -445,6 +446,7 @@ public class OllamaConnector implements LlmConnector {
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class OllamaChatMessage {
         private String role;
         private String content;
@@ -468,6 +470,7 @@ public class OllamaConnector implements LlmConnector {
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class OllamaChatResponse {
         private OllamaChatMessage message;
         private boolean done;
@@ -484,6 +487,7 @@ public class OllamaConnector implements LlmConnector {
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class OllamaGenerateResponse {
         private String response;
         private boolean done;

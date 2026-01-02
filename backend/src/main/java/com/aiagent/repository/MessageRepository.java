@@ -4,6 +4,7 @@ import com.aiagent.entity.Message;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -50,4 +51,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
            "WHERE m.conversation.user.id = :userId AND m.createdAt >= :since AND m.modelUsed IS NOT NULL AND m.role = 'ASSISTANT' " +
            "GROUP BY m.modelUsed ORDER BY COUNT(m) DESC")
     List<Object[]> getModelStatsByUserIdSince(@Param("userId") Long userId, @Param("since") LocalDateTime since);
+
+    @Modifying
+    @Query(value = "DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE agent_id = :agentId)", nativeQuery = true)
+    void deleteByAgentId(@Param("agentId") Long agentId);
 }

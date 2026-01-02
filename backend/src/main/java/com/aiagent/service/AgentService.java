@@ -8,9 +8,12 @@ import com.aiagent.entity.KnowledgeBase;
 import com.aiagent.entity.LlmServer;
 import com.aiagent.entity.User;
 import com.aiagent.repository.AgentRepository;
+import com.aiagent.repository.AgentVersionRepository;
+import com.aiagent.repository.ConversationRepository;
 import com.aiagent.repository.FunctionRepository;
 import com.aiagent.repository.KnowledgeBaseRepository;
 import com.aiagent.repository.LlmServerRepository;
+import com.aiagent.repository.MessageRepository;
 import com.aiagent.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +41,9 @@ public class AgentService {
     private final FunctionRepository functionRepository;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final AgentVersionService agentVersionService;
+    private final AgentVersionRepository agentVersionRepository;
+    private final ConversationRepository conversationRepository;
+    private final MessageRepository messageRepository;
 
     @Transactional(readOnly = true)
     public List<AgentResponse> getAllAgents(Long userId) {
@@ -169,6 +175,18 @@ public class AgentService {
     @Transactional
     public void deleteAgent(Long id, Long userId) {
         Agent agent = findAgentByIdAndUser(id, userId);
+
+        // Delete related records first to avoid foreign key constraint violations
+        // Order: Messages -> Conversations -> AgentVersions -> Agent
+        log.info("Deleting messages for agent: {}", agent.getName());
+        messageRepository.deleteByAgentId(id);
+
+        log.info("Deleting conversations for agent: {}", agent.getName());
+        conversationRepository.deleteByAgentId(id);
+
+        log.info("Deleting versions for agent: {}", agent.getName());
+        agentVersionRepository.deleteByAgentId(id);
+
         agentRepository.delete(agent);
         log.info("Deleted agent: {}", agent.getName());
     }

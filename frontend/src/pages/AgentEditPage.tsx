@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../stores/agentStore';
 import { ChatInterface } from '../components/chat';
 import { LoadingSpinner } from '../components/ui';
@@ -9,15 +10,17 @@ import { agentService } from '../services/agentService';
 import type { FunctionSummary, KnowledgeBaseSummary } from '../services/agentService';
 import { knowledgeService } from '../services/knowledgeService';
 import type { KnowledgeBase } from '../services/knowledgeService';
+import { llmService } from '../services/llmService';
+import type { LlmServer, ModelInfo } from '../services/llmService';
 
 type TabType = 'settings' | 'functions' | 'knowledge' | 'test';
 
-const tabs: { id: TabType; label: string }[] = [
-  { id: 'settings', label: 'Settings' },
-  { id: 'functions', label: 'Functions' },
-  { id: 'knowledge', label: 'Knowledge' },
-  { id: 'test', label: 'Test' },
-];
+const tabLabels: Record<TabType, string> = {
+  settings: 'common.settings',
+  functions: 'nav.functions',
+  knowledge: 'nav.knowledge',
+  test: 'common.test',
+};
 
 interface FunctionTabProps {
   agentId: number;
@@ -26,6 +29,7 @@ interface FunctionTabProps {
 }
 
 function FunctionsTab({ agentId, connectedFunctions, onUpdate }: FunctionTabProps) {
+  const { t } = useTranslation();
   const [allFunctions, setAllFunctions] = useState<Function[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -99,10 +103,10 @@ function FunctionsTab({ agentId, connectedFunctions, onUpdate }: FunctionTabProp
       <div className="flex justify-between items-center mb-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            Connected Functions
+            {t('agents.connectedFunctions')}
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Select functions this agent can call during conversations
+            {t('agents.connectedFunctionsDesc')}
           </p>
         </div>
         {hasChanges() && (
@@ -111,7 +115,7 @@ function FunctionsTab({ agentId, connectedFunctions, onUpdate }: FunctionTabProp
             disabled={isSaving}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {isSaving ? t('common.saving') : t('common.saveChanges')}
           </button>
         )}
       </div>
@@ -125,12 +129,12 @@ function FunctionsTab({ agentId, connectedFunctions, onUpdate }: FunctionTabProp
       {allFunctions.length === 0 ? (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <div className="text-4xl mb-2">⚡</div>
-          <p className="mb-4">No functions available</p>
+          <p className="mb-4">{t('agents.noFunctionsAvailable')}</p>
           <Link
             to="/functions"
             className="text-primary-600 hover:text-primary-700"
           >
-            Create your first function
+            {t('functions.createFirst')}
           </Link>
         </div>
       ) : (
@@ -209,6 +213,7 @@ interface KnowledgeTabProps {
 }
 
 function KnowledgeTab({ agentId, connectedKnowledgeBases, onUpdate }: KnowledgeTabProps) {
+  const { t } = useTranslation();
   const [allKnowledgeBases, setAllKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -282,10 +287,10 @@ function KnowledgeTab({ agentId, connectedKnowledgeBases, onUpdate }: KnowledgeT
       <div className="flex justify-between items-center mb-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            Connected Knowledge Bases
+            {t('agents.connectedKnowledgeBases')}
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Select knowledge bases for RAG-enhanced responses
+            {t('agents.connectedKnowledgeBasesDesc')}
           </p>
         </div>
         {hasChanges() && (
@@ -294,7 +299,7 @@ function KnowledgeTab({ agentId, connectedKnowledgeBases, onUpdate }: KnowledgeT
             disabled={isSaving}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {isSaving ? t('common.saving') : t('common.saveChanges')}
           </button>
         )}
       </div>
@@ -308,12 +313,12 @@ function KnowledgeTab({ agentId, connectedKnowledgeBases, onUpdate }: KnowledgeT
       {allKnowledgeBases.length === 0 ? (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <div className="text-4xl mb-2">📚</div>
-          <p className="mb-4">No knowledge bases available</p>
+          <p className="mb-4">{t('agents.noKnowledgeBasesAvailable')}</p>
           <Link
             to="/knowledge"
             className="text-primary-600 hover:text-primary-700"
           >
-            Create your first knowledge base
+            {t('knowledge.createFirst')}
           </Link>
         </div>
       ) : (
@@ -373,6 +378,7 @@ function KnowledgeTab({ agentId, connectedKnowledgeBases, onUpdate }: KnowledgeT
 }
 
 export default function AgentEditPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get('tab') as TabType) || 'settings';
@@ -385,8 +391,59 @@ export default function AgentEditPage() {
     systemPrompt: '',
     temperature: 0.7,
     maxTokens: 2048,
+    llmServerId: null as number | null,
+    modelName: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [llmServers, setLlmServers] = useState<LlmServer[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+
+  // Load LLM servers
+  useEffect(() => {
+    const loadServers = async () => {
+      try {
+        const servers = await llmService.getActiveServers();
+        setLlmServers(servers);
+      } catch (err) {
+        console.error('Failed to load LLM servers:', err);
+      }
+    };
+    loadServers();
+  }, []);
+
+  // Filter out embedding models - they are not suitable for chat/completion
+  const isEmbeddingModel = (modelName: string): boolean => {
+    const lowerName = modelName.toLowerCase();
+    const embeddingPatterns = [
+      'embed', 'embedding', 'bge-', 'e5-', 'gte-', 'minilm',
+      'all-mpnet', 'paraphrase', 'sentence-', 'instructor'
+    ];
+    return embeddingPatterns.some(pattern => lowerName.includes(pattern));
+  };
+
+  // Load models when server changes
+  useEffect(() => {
+    const loadModels = async () => {
+      if (!formData.llmServerId) {
+        setModels([]);
+        return;
+      }
+      try {
+        setIsLoadingModels(true);
+        const modelList = await llmService.getModels(formData.llmServerId);
+        // Filter out embedding models - only show LLM models for agents
+        const llmModels = modelList.filter(model => !isEmbeddingModel(model.name));
+        setModels(llmModels);
+      } catch (err) {
+        console.error('Failed to load models:', err);
+        setModels([]);
+      } finally {
+        setIsLoadingModels(false);
+      }
+    };
+    loadModels();
+  }, [formData.llmServerId]);
 
   useEffect(() => {
     if (id) {
@@ -402,6 +459,8 @@ export default function AgentEditPage() {
         systemPrompt: selectedAgent.systemPrompt || '',
         temperature: selectedAgent.temperature || 0.7,
         maxTokens: selectedAgent.maxTokens || 2048,
+        llmServerId: selectedAgent.llmServerId || null,
+        modelName: selectedAgent.modelName || '',
       });
     }
   }, [selectedAgent]);
@@ -414,7 +473,10 @@ export default function AgentEditPage() {
     if (!id || !selectedAgent) return;
     setIsSaving(true);
     try {
-      await updateAgent(parseInt(id), formData);
+      await updateAgent(parseInt(id), {
+        ...formData,
+        llmServerId: formData.llmServerId ?? undefined,
+      });
     } catch {
       // Error handled by store
     } finally {
@@ -439,9 +501,9 @@ export default function AgentEditPage() {
   if (!selectedAgent) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-500 dark:text-gray-400">Agent not found</p>
+        <p className="text-gray-500 dark:text-gray-400">{t('agents.noAgentsFound')}</p>
         <Link to="/agents" className="text-primary-600 hover:text-primary-700 mt-2 inline-block">
-          Back to Agents
+          {t('common.back')}
         </Link>
       </div>
     );
@@ -465,7 +527,7 @@ export default function AgentEditPage() {
               {selectedAgent.name}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {selectedAgent.modelName || 'No model configured'}
+              {selectedAgent.modelName || t('dashboard.noModelConfigured')}
             </p>
           </div>
         </div>
@@ -475,7 +537,7 @@ export default function AgentEditPage() {
             disabled={isSaving}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
           >
-            {isSaving ? 'Saving...' : 'Save Changes'}
+            {isSaving ? t('common.saving') : t('common.saveChanges')}
           </button>
         )}
       </div>
@@ -489,23 +551,23 @@ export default function AgentEditPage() {
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
         <nav className="flex space-x-8">
-          {tabs.map((tab) => (
+          {(Object.keys(tabLabels) as TabType[]).map((tabId) => (
             <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
+              key={tabId}
+              onClick={() => handleTabChange(tabId)}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
+                activeTab === tabId
                   ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
               }`}
             >
-              {tab.label}
-              {tab.id === 'functions' && selectedAgent.functions && selectedAgent.functions.length > 0 && (
+              {t(tabLabels[tabId])}
+              {tabId === 'functions' && selectedAgent.functions && selectedAgent.functions.length > 0 && (
                 <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
                   {selectedAgent.functions.length}
                 </span>
               )}
-              {tab.id === 'knowledge' && selectedAgent.knowledgeBases && selectedAgent.knowledgeBases.length > 0 && (
+              {tabId === 'knowledge' && selectedAgent.knowledgeBases && selectedAgent.knowledgeBases.length > 0 && (
                 <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
                   {selectedAgent.knowledgeBases.length}
                 </span>
@@ -521,7 +583,7 @@ export default function AgentEditPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Name
+                {t('agents.name')}
               </label>
               <input
                 type="text"
@@ -533,7 +595,7 @@ export default function AgentEditPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Description
+                {t('agents.description')}
               </label>
               <input
                 type="text"
@@ -543,23 +605,74 @@ export default function AgentEditPage() {
               />
             </div>
 
+            {/* LLM Server & Model Selection */}
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t('llm.servers')}
+                </label>
+                <select
+                  value={formData.llmServerId || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    llmServerId: e.target.value ? parseInt(e.target.value) : null,
+                    modelName: '' // Reset model when server changes
+                  })}
+                  className="block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">{t('agents.model')} {t('common.none')}</option>
+                  {llmServers.map((server) => (
+                    <option key={server.id} value={server.id}>
+                      {server.name} ({server.type})
+                    </option>
+                  ))}
+                </select>
+                {llmServers.length === 0 && (
+                  <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
+                    <Link to="/settings/llm" className="underline">{t('llm.addServer')}</Link>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t('agents.model')}
+                </label>
+                <select
+                  value={formData.modelName}
+                  onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
+                  disabled={!formData.llmServerId || isLoadingModels}
+                  className="block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+                >
+                  <option value="">
+                    {isLoadingModels ? t('common.loading') : t('agents.model')}
+                  </option>
+                  {models.map((model) => (
+                    <option key={model.name} value={model.name}>
+                      {model.displayName || model.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                System Prompt
+                {t('agents.systemPrompt')}
               </label>
               <textarea
                 rows={6}
                 value={formData.systemPrompt}
                 onChange={(e) => setFormData({ ...formData, systemPrompt: e.target.value })}
                 className="block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="You are a helpful AI assistant..."
+                placeholder={t('agents.systemPrompt')}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Temperature: {formData.temperature}
+                  {t('agents.temperature')}: {formData.temperature}
                 </label>
                 <input
                   type="range"
@@ -574,7 +687,7 @@ export default function AgentEditPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Max Tokens
+                  {t('agents.maxTokens')}
                 </label>
                 <input
                   type="number"
@@ -614,12 +727,12 @@ export default function AgentEditPage() {
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <div className="text-4xl mb-2">⚠️</div>
-                  <p className="mb-4">Please configure an LLM server and model in the Settings tab first.</p>
+                  <p className="mb-4">{t('llm.configureLlmFirst')}</p>
                   <button
                     onClick={() => handleTabChange('settings')}
                     className="text-primary-600 hover:text-primary-700"
                   >
-                    Go to Settings
+                    {t('common.settings')}
                   </button>
                 </div>
               </div>

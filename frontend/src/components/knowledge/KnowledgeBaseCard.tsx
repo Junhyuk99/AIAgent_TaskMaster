@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { KnowledgeBase } from '../../services/knowledgeService';
 
 interface KnowledgeBaseCardProps {
@@ -12,12 +13,24 @@ export default function KnowledgeBaseCard({
   onDelete,
   onToggleActive,
 }: KnowledgeBaseCardProps) {
+  const { t, i18n } = useTranslation();
+
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const locale = i18n.language === 'ko' ? 'ko-KR' : 'en-US';
+    return new Date(dateString).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  const getStrategyLabel = (strategy: string) => {
+    const strategyMap: Record<string, string> = {
+      'FIXED_SIZE': t('knowledge.chunkingStrategies.fixedSize'),
+      'SENTENCE': t('knowledge.chunkingStrategies.sentence'),
+      'PARAGRAPH': t('knowledge.chunkingStrategies.paragraph'),
+    };
+    return strategyMap[strategy] || strategy.replace('_', ' ');
   };
 
   return (
@@ -44,7 +57,7 @@ export default function KnowledgeBaseCard({
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-400'
                   }`}
                 >
-                  {knowledgeBase.isActive ? 'Active' : 'Inactive'}
+                  {knowledgeBase.isActive ? t('common.active') : t('common.inactive')}
                 </button>
               </div>
             </div>
@@ -53,7 +66,7 @@ export default function KnowledgeBaseCard({
             <Link
               to={`/knowledge/${knowledgeBase.id}`}
               className="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
-              title="View details"
+              title={t('knowledge.viewDetails')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -63,7 +76,7 @@ export default function KnowledgeBaseCard({
             <button
               onClick={() => onDelete(knowledgeBase.id)}
               className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-              title="Delete"
+              title={t('common.delete')}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -73,7 +86,7 @@ export default function KnowledgeBaseCard({
         </div>
 
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-          {knowledgeBase.description || 'No description'}
+          {knowledgeBase.description || t('knowledge.noDescription')}
         </p>
 
         <div className="grid grid-cols-2 gap-4 text-sm">
@@ -81,19 +94,19 @@ export default function KnowledgeBaseCard({
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            {knowledgeBase.documentCount} documents
+            {t('knowledge.documentsCount', { count: knowledgeBase.documentCount })}
           </div>
           <div className="flex items-center text-gray-500 dark:text-gray-400">
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
             </svg>
-            {knowledgeBase.chunkSize} chunk size
+            {knowledgeBase.chunkSize} {t('knowledge.chunkSizeLabel')}
           </div>
         </div>
 
         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>Strategy: {knowledgeBase.chunkingStrategy.replace('_', ' ')}</span>
-          <span>Updated {formatDate(knowledgeBase.updatedAt)}</span>
+          <span>{t('knowledge.strategy')}: {getStrategyLabel(knowledgeBase.chunkingStrategy)}</span>
+          <span>{t('knowledge.updated')} {formatDate(knowledgeBase.updatedAt)}</span>
         </div>
       </div>
     </div>

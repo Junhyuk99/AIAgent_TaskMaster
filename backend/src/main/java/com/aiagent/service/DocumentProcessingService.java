@@ -44,25 +44,26 @@ public class DocumentProcessingService {
         log.info("Starting document processing for document ID: {}", documentId);
 
         try {
-            // 1. Load document and update status to PROCESSING
-            Document document = updateStatus(documentId, Document.DocumentStatus.PROCESSING, 0, "Initializing");
+            // 1. Load document and KnowledgeBase data within transaction (extracts all needed values)
+            DocumentProcessingContext ctx = loadDocumentContext(documentId);
 
-            KnowledgeBase kb = document.getKnowledgeBase();
+            // Update status to PROCESSING
+            updateStatus(documentId, Document.DocumentStatus.PROCESSING, 0, "Initializing");
 
             // 2. Parse the document
             updateProgress(documentId, 10, "Parsing document");
             ParseResult parseResult;
-            try (InputStream inputStream = fileStorageService.loadAsStream(document.getFilePath())) {
-                var parser = parserFactory.getParser(document.getFileName());
-                parseResult = parser.parse(inputStream, document.getFileName());
+            try (InputStream inputStream = fileStorageService.loadAsStream(ctx.filePath)) {
+                var parser = parserFactory.getParser(ctx.fileName);
+                parseResult = parser.parse(inputStream, ctx.fileName);
             }
             updateProgress(documentId, 20, "Document parsed");
 
             // 3. Create chunking config from knowledge base settings
             ChunkingConfig chunkingConfig = ChunkingConfig.builder()
-                    .chunkSize(kb.getChunkSize())
-                    .chunkOverlap(kb.getChunkOverlap())
-                    .strategyType(mapChunkingStrategy(kb.getChunkingStrategy()))
+                    .chunkSize(ctx.chunkSize)
+                    .chunkOverlap(ctx.chunkOverlap)
+                    .strategyType(ctx.chunkingStrategyType)
                     .build();
 
             // 4. Chunk the text
@@ -72,9 +73,8 @@ public class DocumentProcessingService {
 
             // 5. Generate embeddings and store in vector database
             updateProgress(documentId, 50, "Generating embeddings");
-            String collectionName = kb.getCollectionName();
 
-            if (collectionName == null) {
+            if (ctx.collectionName == null) {
                 throw new RuntimeException("Knowledge base has no vector collection");
             }
 
@@ -89,7 +89,7 @@ public class DocumentProcessingService {
                     // Create vector document with metadata
                     Map<String, Object> metadata = new HashMap<>();
                     metadata.put("documentId", documentId.toString());
-                    metadata.put("documentName", document.getFileName());
+                    metadata.put("documentName", ctx.fileName);
                     metadata.put("chunkIndex", chunk.getIndex());
                     metadata.put("startOffset", chunk.getStartOffset());
                     metadata.put("endOffset", chunk.getEndOffset());
@@ -109,7 +109,7 @@ public class DocumentProcessingService {
 
                     // Upsert in batches
                     if (batchDocuments.size() >= BATCH_SIZE) {
-                        vectorStore.upsert(collectionName, batchDocuments);
+                        vectorStore.upsert(ctx.collectionName, batchDocuments);
                         batchDocuments.clear();
                     }
 
@@ -123,7 +123,7 @@ public class DocumentProcessingService {
 
             // Upsert remaining documents
             if (!batchDocuments.isEmpty()) {
-                vectorStore.upsert(collectionName, batchDocuments);
+                vectorStore.upsert(ctx.collectionName, batchDocuments);
             }
 
             // 6. Update document as completed
@@ -142,9 +142,41 @@ public class DocumentProcessingService {
         }
     }
 
+    /**
+     * Context class to hold all needed data for document processing.
+     * This avoids lazy loading issues by extracting values within a transaction.
+     */
+    private static class DocumentProcessingContext {
+        String fileName;
+        String filePath;
+        int chunkSize;
+        int chunkOverlap;
+        ChunkingConfig.ChunkingStrategyType chunkingStrategyType;
+        String collectionName;
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentProcessingContext loadDocumentContext(Long documentId) {
+        Document document = documentRepository.findByIdWithKnowledgeBase(documentId)
+                .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+
+        KnowledgeBase kb = document.getKnowledgeBase();
+
+        DocumentProcessingContext ctx = new DocumentProcessingContext();
+        ctx.fileName = document.getFileName();
+        ctx.filePath = document.getFilePath();
+        ctx.chunkSize = kb.getChunkSize();
+        ctx.chunkOverlap = kb.getChunkOverlap();
+        ctx.chunkingStrategyType = mapChunkingStrategy(kb.getChunkingStrategy());
+        ctx.collectionName = kb.getCollectionName();
+
+        return ctx;
+    }
+
     @Transactional
     public Document updateStatus(Long documentId, Document.DocumentStatus status, int progress, String stage) {
-        Document document = documentRepository.findById(documentId)
+        // Use findByIdWithKnowledgeBase to eagerly fetch KnowledgeBase for async processing
+        Document document = documentRepository.findByIdWithKnowledgeBase(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
         document.setStatus(status);
         document.setProgress(progress);

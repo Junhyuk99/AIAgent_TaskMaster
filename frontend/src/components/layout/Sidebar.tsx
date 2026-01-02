@@ -78,7 +78,7 @@ export default function Sidebar() {
       <aside
         className={`fixed top-16 left-0 z-20 h-[calc(100vh-4rem)] w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}
+        }`}
       >
         <nav className="mt-5 px-3 space-y-1">
           {navigation.map((item) => (

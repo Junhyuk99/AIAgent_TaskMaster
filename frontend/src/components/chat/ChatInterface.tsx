@@ -1,22 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import chatService from '../../services/chatService';
-import type { ChatMessage, DocumentSource } from '../../services/chatService';
+import type { ChatMessage } from '../../services/chatService';
+import { useChatStore } from '../../stores/chatStore';
 
 interface ChatInterfaceProps {
   agentId: number;
   agentName?: string;
 }
 
-interface DisplayMessage extends ChatMessage {
-  sources?: DocumentSource[];
-}
-
 export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const { t } = useTranslation();
+  const { getMessages, getConversationId, addMessage, setConversationId: setStoreConversationId, clearChat } = useChatStore();
+
+  const messages = getMessages(agentId);
+  const conversationId = getConversationId(agentId);
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
   const [useStreaming, setUseStreaming] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -40,9 +42,8 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
     setIsLoading(true);
     setStreamingContent('');
 
-    // Add user message to the list
-    const newUserMessage: DisplayMessage = { role: 'user', content: userMessage };
-    setMessages((prev) => [...prev, newUserMessage]);
+    // Add user message to the store
+    addMessage(agentId, { role: 'user', content: userMessage });
 
     // Build history without sources for API
     const historyForApi: ChatMessage[] = messages.map(({ role, content }) => ({ role, content }));
@@ -70,7 +71,7 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           () => {
             // On complete
             if (fullResponse) {
-              setMessages((prev) => [...prev, { role: 'assistant', content: fullResponse }]);
+              addMessage(agentId, { role: 'assistant', content: fullResponse });
             }
             setStreamingContent('');
             setIsLoading(false);
@@ -89,15 +90,12 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           history: historyForApi,
         });
 
-        setConversationId(response.conversationId);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: response.response,
-            sources: response.sources,
-          },
-        ]);
+        setStoreConversationId(agentId, response.conversationId);
+        addMessage(agentId, {
+          role: 'assistant',
+          content: response.response,
+          sources: response.sources,
+        });
         setIsLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to send message');
@@ -113,9 +111,8 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
-    setConversationId(null);
+  const handleClearChat = () => {
+    clearChat(agentId);
     setError(null);
     setStreamingContent('');
   };
@@ -130,10 +127,10 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           </div>
           <div>
             <h3 className="font-medium text-gray-900 dark:text-white">
-              {agentName || 'Agent Chat'}
+              {agentName || t('agents.agentChat')}
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {messages.length} messages
+              {t('common.messages', { count: messages.length })}
             </p>
           </div>
         </div>
@@ -145,13 +142,13 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
               onChange={(e) => setUseStreaming(e.target.checked)}
               className="mr-1.5 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
-            Stream
+            {t('common.stream')}
           </label>
           <button
-            onClick={clearChat}
+            onClick={handleClearChat}
             className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
-            Clear
+            {t('common.clear')}
           </button>
         </div>
       </div>
@@ -161,11 +158,11 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
         {messages.length === 0 && !streamingContent && (
           <div className="text-center text-gray-500 dark:text-gray-400 py-8">
             <div className="text-4xl mb-2">&#128172;</div>
-            <p>Start a conversation with the agent</p>
+            <p>{t('chat.startConversation')}</p>
             <p className="text-xs mt-2">
               {useStreaming
-                ? 'Streaming mode (no sources)'
-                : 'Standard mode (with sources)'}
+                ? t('chat.streamingMode')
+                : t('chat.standardMode')}
             </p>
           </div>
         )}
@@ -191,7 +188,7 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
               <div className="flex justify-start mt-2 ml-2">
                 <div className="max-w-[80%]">
                   <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    &#128218; Sources:
+                    &#128218; {t('chat.sources')}:
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {message.sources.map((source, idx) => (
@@ -275,7 +272,7 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
+            placeholder={t('chat.typeMessage')}
             rows={1}
             disabled={isLoading}
             className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"

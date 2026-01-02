@@ -40,10 +40,12 @@ const chatService = {
     onComplete?: () => void
   ): Promise<void> => {
     const token = localStorage.getItem('token');
+    // Use relative path for Docker nginx proxy, fallback to localhost for local dev
+    const baseUrl = import.meta.env.VITE_API_URL || '/api';
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8080/api'}/chat/agent/${agentId}/stream`,
+        `${baseUrl}/chat/agent/${agentId}/stream`,
         {
           method: 'POST',
           headers: {

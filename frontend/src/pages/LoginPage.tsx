@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/authStore';
 import SocialLoginButtons from '../components/auth/SocialLoginButtons';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
@@ -35,12 +37,12 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-            Sign in to your account
+            {t('auth.login')}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Or{' '}
+            {t('auth.noAccount')}{' '}
             <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500">
-              create a new account
+              {t('auth.register')}
             </Link>
           </p>
         </div>
@@ -55,7 +57,7 @@ export default function LoginPage() {
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email" className="sr-only">
-                Email address
+                {t('auth.email')}
               </label>
               <input
                 id="email"
@@ -67,12 +69,12 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="Email address"
+                placeholder={t('auth.email')}
               />
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
-                Password
+                {t('auth.password')}
               </label>
               <input
                 id="password"
@@ -84,7 +86,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="Password"
+                placeholder={t('auth.password')}
               />
             </div>
           </div>
@@ -101,10 +103,10 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Signing in...
+                  {t('common.loading')}
                 </span>
               ) : (
-                'Sign in'
+                t('auth.login')
               )}
             </button>
           </div>
@@ -114,7 +116,7 @@ export default function LoginPage() {
 
         <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
           <Link to="/" className="font-medium text-primary-600 hover:text-primary-500">
-            Back to Home
+            {t('common.back')}
           </Link>
         </p>
       </div>

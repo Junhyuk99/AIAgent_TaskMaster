@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/authStore';
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,15 +26,15 @@ export default function RegisterPage() {
 
   const validateForm = (): boolean => {
     if (name.length < 2) {
-      setValidationError('Name must be at least 2 characters');
+      setValidationError(t('errors.tooShort'));
       return false;
     }
     if (password.length < 6) {
-      setValidationError('Password must be at least 6 characters');
+      setValidationError(t('errors.tooShort'));
       return false;
     }
     if (password !== confirmPassword) {
-      setValidationError('Passwords do not match');
+      setValidationError(t('errors.passwordMismatch'));
       return false;
     }
     setValidationError('');
@@ -58,12 +60,12 @@ export default function RegisterPage() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-            Create your account
+            {t('auth.register')}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Already have an account?{' '}
+            {t('auth.hasAccount')}{' '}
             <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
-              Sign in
+              {t('auth.login')}
             </Link>
           </p>
         </div>
@@ -78,7 +80,7 @@ export default function RegisterPage() {
           <div className="rounded-md shadow-sm space-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Full Name
+                {t('auth.name')}
               </label>
               <input
                 id="name"
@@ -90,13 +92,13 @@ export default function RegisterPage() {
                 onChange={(e) => setName(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="John Doe"
+                placeholder={t('auth.name')}
               />
             </div>
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Email address
+                {t('auth.email')}
               </label>
               <input
                 id="email"
@@ -108,13 +110,13 @@ export default function RegisterPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="you@example.com"
+                placeholder={t('auth.email')}
               />
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Password
+                {t('auth.password')}
               </label>
               <input
                 id="password"
@@ -126,13 +128,13 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="At least 6 characters"
+                placeholder={t('auth.password')}
               />
             </div>
 
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Confirm Password
+                {t('auth.confirmPassword')}
               </label>
               <input
                 id="confirmPassword"
@@ -144,7 +146,7 @@ export default function RegisterPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={isLoading}
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white disabled:opacity-50"
-                placeholder="Confirm your password"
+                placeholder={t('auth.confirmPassword')}
               />
             </div>
           </div>
@@ -161,10 +163,10 @@ export default function RegisterPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Creating account...
+                  {t('common.loading')}
                 </span>
               ) : (
-                'Create account'
+                t('auth.register')
               )}
             </button>
           </div>
@@ -172,7 +174,7 @@ export default function RegisterPage() {
 
         <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
           <Link to="/" className="font-medium text-primary-600 hover:text-primary-500">
-            Back to Home
+            {t('common.back')}
           </Link>
         </p>
       </div>

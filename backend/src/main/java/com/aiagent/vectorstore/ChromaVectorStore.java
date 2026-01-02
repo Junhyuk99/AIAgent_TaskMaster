@@ -19,8 +19,13 @@ import java.util.stream.Collectors;
 @ConditionalOnProperty(name = "vectorstore.type", havingValue = "chroma", matchIfMissing = true)
 public class ChromaVectorStore implements VectorStore {
 
+    private static final String DEFAULT_TENANT = "default_tenant";
+    private static final String DEFAULT_DATABASE = "default_database";
+    private static final String API_BASE = "/api/v2/tenants/" + DEFAULT_TENANT + "/databases/" + DEFAULT_DATABASE;
+
     private final WebClient webClient;
     private final int timeout;
+    private final Map<String, String> collectionIdCache = new HashMap<>();
 
     public ChromaVectorStore(
             @Value("${vectorstore.chroma.url:http://localhost:8000}") String baseUrl,
@@ -29,7 +34,39 @@ public class ChromaVectorStore implements VectorStore {
                 .baseUrl(baseUrl)
                 .build();
         this.timeout = timeout;
-        log.info("ChromaVectorStore initialized with URL: {}", baseUrl);
+        log.info("ChromaVectorStore initialized with URL: {} using API v2", baseUrl);
+    }
+
+    /**
+     * Get collection UUID by name. Required for v2 API operations.
+     */
+    private String getCollectionId(String collectionName) {
+        // Check cache first
+        if (collectionIdCache.containsKey(collectionName)) {
+            return collectionIdCache.get(collectionName);
+        }
+
+        try {
+            Map<String, Object> response = webClient.get()
+                    .uri(API_BASE + "/collections/{name}", collectionName)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofMillis(timeout))
+                    .block();
+
+            if (response != null && response.containsKey("id")) {
+                String id = (String) response.get("id");
+                collectionIdCache.put(collectionName, id);
+                return id;
+            }
+            throw new VectorStoreException("Collection ID not found for: " + collectionName, null);
+        } catch (WebClientResponseException.NotFound e) {
+            throw new VectorStoreException("Collection not found: " + collectionName, e);
+        } catch (VectorStoreException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new VectorStoreException("Failed to get collection ID: " + collectionName, e);
+        }
     }
 
     @Override
@@ -43,7 +80,7 @@ public class ChromaVectorStore implements VectorStore {
             ));
 
             webClient.post()
-                    .uri("/api/v1/collections")
+                    .uri(API_BASE + "/collections")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(request)
                     .retrieve()
@@ -64,14 +101,16 @@ public class ChromaVectorStore implements VectorStore {
     public void deleteCollection(String collectionName) {
         try {
             webClient.delete()
-                    .uri("/api/v1/collections/{name}", collectionName)
+                    .uri(API_BASE + "/collections/{name}", collectionName)
                     .retrieve()
                     .bodyToMono(Void.class)
                     .timeout(Duration.ofMillis(timeout))
                     .block();
 
+            collectionIdCache.remove(collectionName);
             log.info("Deleted Chroma collection: {}", collectionName);
         } catch (WebClientResponseException.NotFound e) {
+            collectionIdCache.remove(collectionName);
             log.debug("Collection {} not found, skipping deletion", collectionName);
         } catch (Exception e) {
             log.error("Failed to delete collection: {}", e.getMessage());
@@ -83,7 +122,7 @@ public class ChromaVectorStore implements VectorStore {
     public boolean collectionExists(String collectionName) {
         try {
             webClient.get()
-                    .uri("/api/v1/collections/{name}", collectionName)
+                    .uri(API_BASE + "/collections/{name}", collectionName)
                     .retrieve()
                     .bodyToMono(Map.class)
                     .timeout(Duration.ofMillis(timeout))
@@ -104,6 +143,8 @@ public class ChromaVectorStore implements VectorStore {
         }
 
         try {
+            String collectionId = getCollectionId(collectionName);
+
             List<String> ids = documents.stream()
                     .map(VectorDocument::getId)
                     .toList();
@@ -124,7 +165,7 @@ public class ChromaVectorStore implements VectorStore {
             request.put("documents", contents);
 
             webClient.post()
-                    .uri("/api/v1/collections/{name}/add", collectionName)
+                    .uri(API_BASE + "/collections/{id}/add", collectionId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(request)
                     .retrieve()
@@ -142,11 +183,13 @@ public class ChromaVectorStore implements VectorStore {
     @Override
     public void deleteByDocumentId(String collectionName, String documentId) {
         try {
+            String collectionId = getCollectionId(collectionName);
+
             Map<String, Object> request = new HashMap<>();
             request.put("where", Map.of("documentId", documentId));
 
             webClient.post()
-                    .uri("/api/v1/collections/{name}/delete", collectionName)
+                    .uri(API_BASE + "/collections/{id}/delete", collectionId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(request)
                     .retrieve()
@@ -164,6 +207,8 @@ public class ChromaVectorStore implements VectorStore {
     @Override
     public List<VectorSearchResult> search(String collectionName, float[] queryVector, int topK, Map<String, Object> metadataFilter) {
         try {
+            String collectionId = getCollectionId(collectionName);
+
             Map<String, Object> request = new HashMap<>();
             request.put("query_embeddings", List.of(toFloatList(queryVector)));
             request.put("n_results", topK);
@@ -174,7 +219,7 @@ public class ChromaVectorStore implements VectorStore {
             }
 
             ChromaQueryResponse response = webClient.post()
-                    .uri("/api/v1/collections/{name}/query", collectionName)
+                    .uri(API_BASE + "/collections/{id}/query", collectionId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(request)
                     .retrieve()
@@ -218,17 +263,16 @@ public class ChromaVectorStore implements VectorStore {
     @Override
     public long getDocumentCount(String collectionName) {
         try {
-            Map<String, Object> response = webClient.get()
-                    .uri("/api/v1/collections/{name}/count", collectionName)
+            String collectionId = getCollectionId(collectionName);
+
+            Integer count = webClient.get()
+                    .uri(API_BASE + "/collections/{id}/count", collectionId)
                     .retrieve()
-                    .bodyToMono(Map.class)
+                    .bodyToMono(Integer.class)
                     .timeout(Duration.ofMillis(timeout))
                     .block();
 
-            if (response != null && response.containsKey("count")) {
-                return ((Number) response.get("count")).longValue();
-            }
-            return 0;
+            return count != null ? count : 0;
         } catch (Exception e) {
             log.error("Failed to get document count: {}", e.getMessage());
             return 0;

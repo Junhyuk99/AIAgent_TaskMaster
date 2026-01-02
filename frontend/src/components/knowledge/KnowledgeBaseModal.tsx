@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useKnowledgeStore } from '../../stores/knowledgeStore';
 import type { KnowledgeBase, ChunkingStrategy } from '../../services/knowledgeService';
 
@@ -9,10 +10,10 @@ interface KnowledgeBaseModalProps {
   onSuccess?: () => void;
 }
 
-const chunkingStrategies: { value: ChunkingStrategy; label: string; description: string }[] = [
-  { value: 'FIXED_SIZE', label: 'Fixed Size', description: 'Split into fixed character length chunks' },
-  { value: 'SENTENCE', label: 'Sentence', description: 'Split at sentence boundaries' },
-  { value: 'PARAGRAPH', label: 'Paragraph', description: 'Split at paragraph boundaries' },
+const chunkingStrategies: { value: ChunkingStrategy; labelKey: string; descKey: string }[] = [
+  { value: 'FIXED_SIZE', labelKey: 'knowledge.chunkingStrategies.fixedSize', descKey: 'knowledge.chunkingStrategies.fixedSizeDesc' },
+  { value: 'SENTENCE', labelKey: 'knowledge.chunkingStrategies.sentence', descKey: 'knowledge.chunkingStrategies.sentenceDesc' },
+  { value: 'PARAGRAPH', labelKey: 'knowledge.chunkingStrategies.paragraph', descKey: 'knowledge.chunkingStrategies.paragraphDesc' },
 ];
 
 export default function KnowledgeBaseModal({
@@ -21,6 +22,7 @@ export default function KnowledgeBaseModal({
   editingKnowledgeBase,
   onSuccess,
 }: KnowledgeBaseModalProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [chunkSize, setChunkSize] = useState(500);
@@ -137,7 +139,7 @@ export default function KnowledgeBaseModal({
             <div className="px-4 pb-4 pt-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {isEditing ? 'Edit Knowledge Base' : 'Create New Knowledge Base'}
+                  {isEditing ? t('knowledge.editKnowledgeBase') : t('knowledge.createNewKnowledgeBase')}
                 </h3>
                 <button
                   type="button"
@@ -159,7 +161,7 @@ export default function KnowledgeBaseModal({
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Name <span className="text-red-500">*</span>
+                    {t('knowledge.name')} <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -168,7 +170,7 @@ export default function KnowledgeBaseModal({
                     className={`block w-full rounded-md border ${
                       errors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                    placeholder="My Knowledge Base"
+                    placeholder={t('knowledge.namePlaceholder')}
                   />
                   {errors.name && (
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
@@ -177,7 +179,7 @@ export default function KnowledgeBaseModal({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Description
+                    {t('knowledge.description')}
                   </label>
                   <textarea
                     rows={3}
@@ -186,7 +188,7 @@ export default function KnowledgeBaseModal({
                     className={`block w-full rounded-md border ${
                       errors.description ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                     } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                    placeholder="Describe this knowledge base..."
+                    placeholder={t('knowledge.descriptionPlaceholder')}
                   />
                   {errors.description && (
                     <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.description}</p>
@@ -195,7 +197,7 @@ export default function KnowledgeBaseModal({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Chunking Strategy
+                    {t('knowledge.chunkingStrategy')}
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     {chunkingStrategies.map((strategy) => (
@@ -210,10 +212,10 @@ export default function KnowledgeBaseModal({
                         }`}
                       >
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {strategy.label}
+                          {t(strategy.labelKey)}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {strategy.description}
+                          {t(strategy.descKey)}
                         </div>
                       </button>
                     ))}
@@ -223,7 +225,7 @@ export default function KnowledgeBaseModal({
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Chunk Size
+                      {t('knowledge.chunkSize')}
                     </label>
                     <input
                       type="number"
@@ -238,12 +240,12 @@ export default function KnowledgeBaseModal({
                     {errors.chunkSize && (
                       <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.chunkSize}</p>
                     )}
-                    <p className="mt-1 text-xs text-gray-500">100-8000 characters</p>
+                    <p className="mt-1 text-xs text-gray-500">{t('knowledge.chunkSizeRange')}</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Chunk Overlap
+                      {t('knowledge.chunkOverlap')}
                     </label>
                     <input
                       type="number"
@@ -258,7 +260,7 @@ export default function KnowledgeBaseModal({
                     {errors.chunkOverlap && (
                       <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.chunkOverlap}</p>
                     )}
-                    <p className="mt-1 text-xs text-gray-500">0-1000 characters</p>
+                    <p className="mt-1 text-xs text-gray-500">{t('knowledge.chunkOverlapRange')}</p>
                   </div>
                 </div>
               </div>
@@ -276,12 +278,12 @@ export default function KnowledgeBaseModal({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    {isEditing ? 'Updating...' : 'Creating...'}
+                    {isEditing ? t('knowledge.updating') : t('knowledge.creating')}
                   </span>
                 ) : isEditing ? (
-                  'Update Knowledge Base'
+                  t('knowledge.updateKnowledgeBase')
                 ) : (
-                  'Create Knowledge Base'
+                  t('knowledge.createKnowledgeBase')
                 )}
               </button>
               <button
@@ -290,7 +292,7 @@ export default function KnowledgeBaseModal({
                 disabled={isLoading}
                 className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-600 px-4 py-2 text-sm font-semibold text-gray-900 dark:text-white shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 sm:mt-0 sm:w-auto disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </form>

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFunctionStore, parseParametersFromSchema } from '../../stores/functionStore';
 import type { Function, ImplementationType } from '../../services/functionService';
 import ParameterBuilder from './ParameterBuilder';
@@ -16,36 +17,37 @@ interface FunctionModalProps {
 
 type TabType = 'basic' | 'parameters' | 'implementation' | 'test';
 
-const tabs: { id: TabType; label: string; editOnly?: boolean }[] = [
-  { id: 'basic', label: 'Basic Info' },
-  { id: 'parameters', label: 'Parameters' },
-  { id: 'implementation', label: 'Implementation' },
-  { id: 'test', label: 'Test', editOnly: true },
+const tabs: { id: TabType; labelKey: string; editOnly?: boolean }[] = [
+  { id: 'basic', labelKey: 'functions.basicInfo' },
+  { id: 'parameters', labelKey: 'functions.parameters' },
+  { id: 'implementation', labelKey: 'functions.implementation' },
+  { id: 'test', labelKey: 'functions.test', editOnly: true },
 ];
 
 const returnTypes = [
-  { value: 'string', label: 'String' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Boolean' },
-  { value: 'object', label: 'Object' },
-  { value: 'array', label: 'Array' },
-  { value: 'void', label: 'Void (No return)' },
+  { value: 'string', labelKey: 'functions.returnTypes.string' },
+  { value: 'number', labelKey: 'functions.returnTypes.number' },
+  { value: 'boolean', labelKey: 'functions.returnTypes.boolean' },
+  { value: 'object', labelKey: 'functions.returnTypes.object' },
+  { value: 'array', labelKey: 'functions.returnTypes.array' },
+  { value: 'void', labelKey: 'functions.returnTypes.void' },
 ];
 
-const implementationTypes: { value: ImplementationType; label: string; description: string }[] = [
-  { value: 'HTTP_API', label: 'HTTP API', description: 'Call an external REST API' },
-  { value: 'CODE', label: 'Code', description: 'Custom JavaScript/Python code' },
-  { value: 'TEMPLATE', label: 'Template', description: 'Use a built-in template' },
+const implementationTypes: { value: ImplementationType; labelKey: string; descKey: string }[] = [
+  { value: 'HTTP_API', labelKey: 'functions.implementationTypes.httpApi', descKey: 'functions.implementationTypes.httpApiDesc' },
+  { value: 'CODE', labelKey: 'functions.implementationTypes.code', descKey: 'functions.implementationTypes.codeDesc' },
+  { value: 'TEMPLATE', labelKey: 'functions.implementationTypes.template', descKey: 'functions.implementationTypes.templateDesc' },
 ];
 
 const functionTemplates = [
-  { id: 'weather', name: 'Weather Lookup', description: 'Get current weather for a location' },
-  { id: 'calculator', name: 'Calculator', description: 'Perform mathematical calculations' },
-  { id: 'web_search', name: 'Web Search', description: 'Search the web for information' },
-  { id: 'datetime', name: 'Date/Time', description: 'Get current date and time' },
+  { id: 'weather', nameKey: 'functions.templates.weather', descKey: 'functions.templates.weatherDesc' },
+  { id: 'calculator', nameKey: 'functions.templates.calculator', descKey: 'functions.templates.calculatorDesc' },
+  { id: 'web_search', nameKey: 'functions.templates.webSearch', descKey: 'functions.templates.webSearchDesc' },
+  { id: 'datetime', nameKey: 'functions.templates.datetime', descKey: 'functions.templates.datetimeDesc' },
 ];
 
 export default function FunctionModal({ isOpen, onClose, editingFunction, onSuccess }: FunctionModalProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabType>('basic');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -217,10 +219,9 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
         code: codeConfig.code,
       });
     } else {
-      const template = functionTemplates.find((t) => t.id === selectedTemplate);
       return JSON.stringify({
         templateId: selectedTemplate,
-        templateName: template?.name || '',
+        templateName: selectedTemplate,
       });
     }
   };
@@ -301,7 +302,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {isEditing ? 'Edit Function' : 'Create New Function'}
+                {isEditing ? t('functions.editFunction') : t('functions.createNewFunction')}
               </h3>
               <button
                 type="button"
@@ -330,7 +331,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
                       }`}
                     >
-                      {tab.label}
+                      {t(tab.labelKey)}
                     </button>
                   ))}
               </nav>
@@ -351,13 +352,13 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Function Name <span className="text-red-500">*</span>
+                          {t('functions.functionName')} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           value={name}
                           onChange={(e) => setName(e.target.value)}
-                          placeholder="get_weather"
+                          placeholder={t('functions.functionNamePlaceholder')}
                           className={`block w-full rounded-md border ${
                             errors.name ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                           } px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500`}
@@ -366,26 +367,26 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
                         )}
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Use snake_case (e.g., get_weather, send_email)
+                          {t('functions.functionNameHint')}
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Description
+                          {t('agents.description')}
                         </label>
                         <textarea
                           rows={3}
                           value={description}
                           onChange={(e) => setDescription(e.target.value)}
-                          placeholder="Describe what this function does..."
+                          placeholder={t('functions.descriptionPlaceholder')}
                           className="block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Return Type
+                          {t('functions.returnType')}
                         </label>
                         <select
                           value={returnType}
@@ -394,7 +395,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                         >
                           {returnTypes.map((type) => (
                             <option key={type.value} value={type.value}>
-                              {type.label}
+                              {t(type.labelKey)}
                             </option>
                           ))}
                         </select>
@@ -415,7 +416,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Implementation Type
+                          {t('functions.implementationType')}
                         </label>
                         <div className="grid grid-cols-3 gap-3">
                           {implementationTypes.map((type) => (
@@ -430,10 +431,10 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                               }`}
                             >
                               <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                {type.label}
+                                {t(type.labelKey)}
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                {type.description}
+                                {t(type.descKey)}
                               </div>
                             </button>
                           ))}
@@ -445,7 +446,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           <div className="grid grid-cols-4 gap-3">
                             <div className="col-span-1">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Method
+                                {t('functions.method')}
                               </label>
                               <select
                                 value={httpConfig.method}
@@ -466,7 +467,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                             </div>
                             <div className="col-span-3">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                URL <span className="text-red-500">*</span>
+                                {t('functions.url')} <span className="text-red-500">*</span>
                               </label>
                               <input
                                 type="text"
@@ -483,14 +484,14 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           <div>
                             <div className="flex items-center justify-between mb-2">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Headers
+                                {t('functions.headers')}
                               </label>
                               <button
                                 type="button"
                                 onClick={addHeader}
                                 className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
                               >
-                                + Add Header
+                                {t('functions.addHeader')}
                               </button>
                             </div>
                             {httpConfig.headers.length > 0 && (
@@ -501,14 +502,14 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                                       type="text"
                                       value={header.key}
                                       onChange={(e) => updateHeader(index, 'key', e.target.value)}
-                                      placeholder="Header name"
+                                      placeholder={t('functions.headerName')}
                                       className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                     <input
                                       type="text"
                                       value={header.value}
                                       onChange={(e) => updateHeader(index, 'value', e.target.value)}
-                                      placeholder="Header value"
+                                      placeholder={t('functions.headerValue')}
                                       className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                     <button
@@ -529,7 +530,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           {['POST', 'PUT', 'PATCH'].includes(httpConfig.method) && (
                             <div>
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Request Body Template
+                                {t('functions.requestBodyTemplate')}
                               </label>
                               <textarea
                                 rows={4}
@@ -541,7 +542,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                                 className="block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm font-mono text-gray-900 dark:text-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                               />
                               <p className="mt-1 text-xs text-gray-500">
-                                Use {'{{paramName}}'} to reference parameters
+                                {t('functions.requestBodyHint')}
                               </p>
                             </div>
                           )}
@@ -552,7 +553,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              Language
+                              {t('functions.language')}
                             </label>
                             <select
                               value={codeConfig.language}
@@ -570,7 +571,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              Code <span className="text-red-500">*</span>
+                              {t('functions.code')} <span className="text-red-500">*</span>
                             </label>
                             <textarea
                               rows={10}
@@ -592,7 +593,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                       {implementationType === 'TEMPLATE' && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Select Template <span className="text-red-500">*</span>
+                            {t('functions.selectTemplate')} <span className="text-red-500">*</span>
                           </label>
                           <div className="grid grid-cols-2 gap-3">
                             {functionTemplates.map((template) => (
@@ -607,10 +608,10 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                                 }`}
                               >
                                 <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                  {template.name}
+                                  {t(template.nameKey)}
                                 </div>
                                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                  {template.description}
+                                  {t(template.descKey)}
                                 </div>
                               </button>
                             ))}
@@ -656,7 +657,7 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                 disabled={isLoading}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
@@ -669,12 +670,12 @@ export default function FunctionModal({ isOpen, onClose, editingFunction, onSucc
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    {isEditing ? 'Updating...' : 'Creating...'}
+                    {isEditing ? t('functions.updating') : t('functions.creating')}
                   </span>
                 ) : isEditing ? (
-                  'Update Function'
+                  t('functions.updateFunction')
                 ) : (
-                  'Create Function'
+                  t('functions.createFunction')
                 )}
               </button>
             </div>

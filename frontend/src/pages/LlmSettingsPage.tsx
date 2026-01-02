@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { llmService } from '../services/llmService';
 import type { LlmServer, LlmServerRequest, LlmType, ConnectionTestResponse, ModelInfo } from '../services/llmService';
 
@@ -11,6 +12,7 @@ interface ServerModalProps {
 }
 
 function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerModalProps) {
+  const { t } = useTranslation();
   const getInitialFormData = (): LlmServerRequest => ({
     name: server?.name ?? '',
     type: server?.type ?? 'OLLAMA',
@@ -52,13 +54,13 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
   const getTypeDescription = (type: LlmType) => {
     switch (type) {
       case 'OLLAMA':
-        return 'Local Ollama server with native API';
+        return t('llm.typeDescOllama');
       case 'VLLM':
-        return 'vLLM server with OpenAI-compatible API';
+        return t('llm.typeDescVllm');
       case 'OPENAI_COMPATIBLE':
-        return 'Any OpenAI-compatible API (LMStudio, LocalAI, etc.)';
+        return t('llm.typeDescOpenai');
       case 'CUSTOM':
-        return 'Custom endpoint with OpenAI-compatible API format';
+        return t('llm.typeDescCustom');
       default:
         return '';
     }
@@ -71,12 +73,12 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="p-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            {server ? 'Edit LLM Server' : 'Add LLM Server'}
+            {server ? t('llm.editServer') : t('llm.addServer')}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Server Name
+                {t('llm.serverName')}
               </label>
               <input
                 type="text"
@@ -90,7 +92,7 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Server Type
+                {t('llm.serverType')}
               </label>
               <select
                 value={formData.type}
@@ -109,7 +111,7 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Base URL
+                {t('llm.baseUrl')}
               </label>
               <input
                 type="url"
@@ -123,14 +125,14 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                API Key (optional)
+                {t('llm.apiKeyOptional')}
               </label>
               <input
                 type="password"
                 value={formData.apiKey}
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                placeholder={server ? '(unchanged)' : 'Enter API key if required'}
+                placeholder={t('llm.apiKey')}
               />
             </div>
 
@@ -141,14 +143,14 @@ function ServerModal({ isOpen, onClose, onSubmit, server, isLoading }: ServerMod
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 disabled={isLoading}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
                 disabled={isLoading}
               >
-                {isLoading ? 'Saving...' : server ? 'Update' : 'Add Server'}
+                {isLoading ? t('llm.saving') : server ? t('llm.update') : t('llm.addServer')}
               </button>
             </div>
           </form>
@@ -167,6 +169,7 @@ interface ModelsModalProps {
 }
 
 function ModelsModal({ isOpen, onClose, server, models, isLoading }: ModelsModalProps) {
+  const { t } = useTranslation();
   if (!isOpen || !server) return null;
 
   return (
@@ -174,7 +177,7 @@ function ModelsModal({ isOpen, onClose, server, models, isLoading }: ModelsModal
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Available Models - {server.name}
+            {t('llm.availableModels')} - {server.name}
           </h2>
         </div>
         <div className="p-6 overflow-y-auto flex-1">
@@ -184,7 +187,7 @@ function ModelsModal({ isOpen, onClose, server, models, isLoading }: ModelsModal
             </div>
           ) : models.length === 0 ? (
             <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-              No models available
+              {t('llm.noModels')}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -198,7 +201,7 @@ function ModelsModal({ isOpen, onClose, server, models, isLoading }: ModelsModal
                   </div>
                   {model.size && (
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      Size: {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB
+                      {t('llm.size')}: {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB
                     </div>
                   )}
                 </li>
@@ -211,7 +214,7 @@ function ModelsModal({ isOpen, onClose, server, models, isLoading }: ModelsModal
             onClick={onClose}
             className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </div>
@@ -232,6 +235,7 @@ function ServerCard({
   onToggleActive: () => void;
   onViewModels: () => void;
 }) {
+  const { t } = useTranslation();
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -354,25 +358,25 @@ function ServerCard({
           disabled={isTesting}
           className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
         >
-          {isTesting ? 'Testing...' : 'Test Connection'}
+          {isTesting ? t('llm.testing') : t('llm.testConnection')}
         </button>
         <button
           onClick={onViewModels}
           className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         >
-          View Models
+          {t('llm.viewModels')}
         </button>
         <button
           onClick={onEdit}
           className="px-3 py-1.5 text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-lg hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
         >
-          Edit
+          {t('common.edit')}
         </button>
         <button
           onClick={onDelete}
           className="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
         >
-          Delete
+          {t('common.delete')}
         </button>
       </div>
     </div>
@@ -380,6 +384,7 @@ function ServerCard({
 }
 
 export default function LlmSettingsPage() {
+  const { t } = useTranslation();
   const [servers, setServers] = useState<LlmServer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -486,9 +491,9 @@ export default function LlmSettingsPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">LLM Settings</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('llm.title')}</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Configure LLM servers for your AI agents
+            {t('llm.subtitle')}
           </p>
         </div>
         <button
@@ -498,7 +503,7 @@ export default function LlmSettingsPage() {
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Server
+          {t('llm.addServer')}
         </button>
       </div>
 
@@ -517,16 +522,16 @@ export default function LlmSettingsPage() {
               </svg>
             </div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              No LLM servers configured
+              {t('llm.noServers')}
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-              Add an Ollama, vLLM, or other OpenAI-compatible LLM server to start using AI agents.
+              {t('llm.noServersDesc')}
             </p>
             <button
               onClick={handleAddServer}
               className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
             >
-              Add Your First Server
+              {t('llm.addFirst')}
             </button>
           </div>
         </div>
