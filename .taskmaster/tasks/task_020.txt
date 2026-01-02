@@ -1,0 +1,297 @@
+================================================================================
+TASK #020: 문서 파싱 시스템 구현
+================================================================================
+
+[기본 정보]
+- ID: 20
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #19 (파일 업로드 및 저장 시스템)
+
+[설명]
+PDF, TXT, DOCX, MD, CSV, JSON 문서 파싱 및 텍스트 추출
+
+[상세 구현 가이드]
+1. 의존성 추가
+   ```gradle
+   // PDF 파싱
+   implementation 'org.apache.pdfbox:pdfbox:3.0.1'
+
+   // DOCX/DOC 파싱
+   implementation 'org.apache.poi:poi-ooxml:5.2.5'
+
+   // CSV 파싱
+   implementation 'org.apache.commons:commons-csv:1.10.0'
+   ```
+
+2. DocumentParser 인터페이스
+   ```java
+   public interface DocumentParser {
+       String[] getSupportedExtensions();
+       String[] getSupportedMimeTypes();
+       ParseResult parse(InputStream inputStream, String filename);
+   }
+
+   @Data
+   @Builder
+   public class ParseResult {
+       private String content;
+       private Map<String, Object> metadata;
+       private int pageCount;  // PDF의 경우
+       private List<String> sections;  // 섹션별 분리 (선택)
+   }
+   ```
+
+3. PDF 파서 (Apache PDFBox)
+   ```java
+   @Component
+   public class PdfParser implements DocumentParser {
+
+       @Override
+       public String[] getSupportedExtensions() {
+           return new String[]{"pdf"};
+       }
+
+       @Override
+       public String[] getSupportedMimeTypes() {
+           return new String[]{"application/pdf"};
+       }
+
+       @Override
+       public ParseResult parse(InputStream inputStream, String filename) {
+           try (PDDocument document = Loader.loadPDF(inputStream.readAllBytes())) {
+               PDFTextStripper stripper = new PDFTextStripper();
+
+               // 메타데이터 추출
+               PDDocumentInformation info = document.getDocumentInformation();
+               Map<String, Object> metadata = new HashMap<>();
+               metadata.put("title", info.getTitle());
+               metadata.put("author", info.getAuthor());
+               metadata.put("subject", info.getSubject());
+               metadata.put("creationDate", info.getCreationDate());
+
+               // 텍스트 추출
+               String content = stripper.getText(document);
+
+               return ParseResult.builder()
+                   .content(cleanText(content))
+                   .metadata(metadata)
+                   .pageCount(document.getNumberOfPages())
+                   .build();
+           }
+       }
+
+       private String cleanText(String text) {
+           // 불필요한 공백, 특수문자 정리
+           return text.replaceAll("\\s+", " ")
+                      .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "")
+                      .trim();
+       }
+   }
+   ```
+
+4. DOCX 파서 (Apache POI)
+   ```java
+   @Component
+   public class DocxParser implements DocumentParser {
+
+       @Override
+       public String[] getSupportedExtensions() {
+           return new String[]{"docx"};
+       }
+
+       @Override
+       public ParseResult parse(InputStream inputStream, String filename) {
+           try (XWPFDocument document = new XWPFDocument(inputStream)) {
+               StringBuilder content = new StringBuilder();
+
+               // 문단 추출
+               for (XWPFParagraph paragraph : document.getParagraphs()) {
+                   content.append(paragraph.getText()).append("\n");
+               }
+
+               // 테이블 추출
+               for (XWPFTable table : document.getTables()) {
+                   for (XWPFTableRow row : table.getRows()) {
+                       for (XWPFTableCell cell : row.getTableCells()) {
+                           content.append(cell.getText()).append("\t");
+                       }
+                       content.append("\n");
+                   }
+               }
+
+               // 메타데이터
+               POIXMLProperties.CoreProperties coreProps =
+                   document.getProperties().getCoreProperties();
+               Map<String, Object> metadata = new HashMap<>();
+               metadata.put("title", coreProps.getTitle());
+               metadata.put("creator", coreProps.getCreator());
+
+               return ParseResult.builder()
+                   .content(content.toString().trim())
+                   .metadata(metadata)
+                   .build();
+           }
+       }
+   }
+   ```
+
+5. 텍스트/마크다운 파서
+   ```java
+   @Component
+   public class TextParser implements DocumentParser {
+
+       @Override
+       public String[] getSupportedExtensions() {
+           return new String[]{"txt", "md"};
+       }
+
+       @Override
+       public ParseResult parse(InputStream inputStream, String filename) {
+           String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+
+           // 마크다운인 경우 간단한 정리
+           if (filename.endsWith(".md")) {
+               content = processMarkdown(content);
+           }
+
+           return ParseResult.builder()
+               .content(content)
+               .metadata(Map.of("encoding", "UTF-8"))
+               .build();
+       }
+
+       private String processMarkdown(String content) {
+           // 마크다운 문법 제거 (옵션)
+           // 또는 그대로 유지하여 구조 정보 보존
+           return content;
+       }
+   }
+   ```
+
+6. CSV 파서
+   ```java
+   @Component
+   public class CsvParser implements DocumentParser {
+
+       @Override
+       public String[] getSupportedExtensions() {
+           return new String[]{"csv"};
+       }
+
+       @Override
+       public ParseResult parse(InputStream inputStream, String filename) {
+           StringBuilder content = new StringBuilder();
+           int rowCount = 0;
+
+           Reader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+           CSVParser csvParser = CSVFormat.DEFAULT
+               .withFirstRecordAsHeader()
+               .parse(reader);
+
+           List<String> headers = csvParser.getHeaderNames();
+
+           for (CSVRecord record : csvParser) {
+               // 각 행을 자연어 형태로 변환
+               StringBuilder row = new StringBuilder();
+               for (String header : headers) {
+                   row.append(header).append(": ").append(record.get(header)).append(", ");
+               }
+               content.append(row.toString().trim()).append("\n");
+               rowCount++;
+           }
+
+           return ParseResult.builder()
+               .content(content.toString())
+               .metadata(Map.of("headers", headers, "rowCount", rowCount))
+               .build();
+       }
+   }
+   ```
+
+7. JSON 파서
+   ```java
+   @Component
+   public class JsonParser implements DocumentParser {
+
+       private final ObjectMapper objectMapper;
+
+       @Override
+       public String[] getSupportedExtensions() {
+           return new String[]{"json"};
+       }
+
+       @Override
+       public ParseResult parse(InputStream inputStream, String filename) {
+           JsonNode rootNode = objectMapper.readTree(inputStream);
+
+           // JSON을 텍스트로 평탄화
+           String content = flattenJson(rootNode, "");
+
+           return ParseResult.builder()
+               .content(content)
+               .metadata(Map.of("isArray", rootNode.isArray()))
+               .build();
+       }
+
+       private String flattenJson(JsonNode node, String prefix) {
+           StringBuilder result = new StringBuilder();
+
+           if (node.isObject()) {
+               node.fields().forEachRemaining(entry -> {
+                   String key = prefix.isEmpty() ? entry.getKey() : prefix + "." + entry.getKey();
+                   result.append(flattenJson(entry.getValue(), key));
+               });
+           } else if (node.isArray()) {
+               int index = 0;
+               for (JsonNode element : node) {
+                   result.append(flattenJson(element, prefix + "[" + index++ + "]"));
+               }
+           } else {
+               result.append(prefix).append(": ").append(node.asText()).append("\n");
+           }
+
+           return result.toString();
+       }
+   }
+   ```
+
+8. DocumentParserFactory
+   ```java
+   @Component
+   public class DocumentParserFactory {
+       private final Map<String, DocumentParser> parsersByExtension;
+
+       public DocumentParserFactory(List<DocumentParser> parsers) {
+           this.parsersByExtension = new HashMap<>();
+           for (DocumentParser parser : parsers) {
+               for (String ext : parser.getSupportedExtensions()) {
+                   parsersByExtension.put(ext.toLowerCase(), parser);
+               }
+           }
+       }
+
+       public DocumentParser getParser(String filename) {
+           String extension = getExtension(filename).toLowerCase();
+           DocumentParser parser = parsersByExtension.get(extension);
+           if (parser == null) {
+               throw new UnsupportedFileTypeException("지원하지 않는 파일 형식: " + extension);
+           }
+           return parser;
+       }
+   }
+   ```
+
+[테스트 기준]
+- [ ] PDF 파싱 → 텍스트 추출 확인
+- [ ] DOCX 파싱 → 텍스트 및 테이블 추출
+- [ ] TXT/MD 파싱 → 원본 텍스트 유지
+- [ ] CSV 파싱 → 구조화된 텍스트 변환
+- [ ] JSON 파싱 → 평탄화된 텍스트 변환
+- [ ] 지원하지 않는 파일 형식 에러 처리
+- [ ] 대용량 파일 (10MB+) 처리 성능
+
+[참고 자료]
+- Apache PDFBox: https://pdfbox.apache.org/
+- Apache POI: https://poi.apache.org/

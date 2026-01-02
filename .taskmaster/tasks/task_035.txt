@@ -1,0 +1,298 @@
+================================================================================
+TASK #035: OAuth 소셜 로그인 구현
+================================================================================
+
+[기본 정보]
+- ID: 35
+- 우선순위: low
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템), Task #6 (인증 UI)
+
+[설명]
+Google, GitHub OAuth 로그인 구현
+
+[상세 구현 가이드]
+1. 의존성 추가
+   ```gradle
+   implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+   ```
+
+2. OAuth 설정 (application.yml)
+   ```yaml
+   spring:
+     security:
+       oauth2:
+         client:
+           registration:
+             google:
+               client-id: ${GOOGLE_CLIENT_ID}
+               client-secret: ${GOOGLE_CLIENT_SECRET}
+               scope:
+                 - email
+                 - profile
+
+             github:
+               client-id: ${GITHUB_CLIENT_ID}
+               client-secret: ${GITHUB_CLIENT_SECRET}
+               scope:
+                 - user:email
+                 - read:user
+
+           provider:
+             github:
+               authorization-uri: https://github.com/login/oauth/authorize
+               token-uri: https://github.com/login/oauth/access_token
+               user-info-uri: https://api.github.com/user
+               user-name-attribute: id
+   ```
+
+3. User 엔티티 확장
+   ```java
+   @Entity
+   public class User {
+       // ... 기존 필드
+
+       @Enumerated(EnumType.STRING)
+       private AuthProvider provider = AuthProvider.LOCAL;
+
+       private String providerId;  // OAuth provider의 사용자 ID
+
+       private String profileImageUrl;
+   }
+
+   public enum AuthProvider {
+       LOCAL, GOOGLE, GITHUB
+   }
+   ```
+
+4. OAuth2 Security 설정
+   ```java
+   @Configuration
+   public class OAuth2SecurityConfig {
+
+       @Bean
+       public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+           http
+               // ... 기존 설정
+
+               .oauth2Login(oauth2 -> oauth2
+                   .authorizationEndpoint(auth -> auth
+                       .baseUri("/oauth2/authorize"))
+                   .redirectionEndpoint(redirect -> redirect
+                       .baseUri("/oauth2/callback/*"))
+                   .userInfoEndpoint(userInfo -> userInfo
+                       .userService(customOAuth2UserService))
+                   .successHandler(oAuth2AuthenticationSuccessHandler)
+                   .failureHandler(oAuth2AuthenticationFailureHandler)
+               );
+
+           return http.build();
+       }
+   }
+   ```
+
+5. CustomOAuth2UserService
+   ```java
+   @Service
+   public class CustomOAuth2UserService extends DefaultOAuth2UserService {
+
+       private final UserRepository userRepository;
+
+       @Override
+       public OAuth2User loadUser(OAuth2UserRequest request) throws OAuth2AuthenticationException {
+           OAuth2User oauth2User = super.loadUser(request);
+
+           String registrationId = request.getClientRegistration().getRegistrationId();
+           OAuth2UserInfo userInfo = OAuth2UserInfoFactory.getOAuth2UserInfo(
+               registrationId, oauth2User.getAttributes());
+
+           User user = processOAuth2User(registrationId, userInfo);
+
+           return new CustomOAuth2User(user, oauth2User.getAttributes());
+       }
+
+       private User processOAuth2User(String registrationId, OAuth2UserInfo userInfo) {
+           AuthProvider provider = AuthProvider.valueOf(registrationId.toUpperCase());
+
+           Optional<User> existingUser = userRepository.findByProviderAndProviderId(
+               provider, userInfo.getId());
+
+           if (existingUser.isPresent()) {
+               // 기존 사용자 정보 업데이트
+               User user = existingUser.get();
+               user.setName(userInfo.getName());
+               user.setProfileImageUrl(userInfo.getImageUrl());
+               return userRepository.save(user);
+           }
+
+           // 이메일로 기존 계정 확인
+           Optional<User> userByEmail = userRepository.findByEmail(userInfo.getEmail());
+           if (userByEmail.isPresent()) {
+               User user = userByEmail.get();
+               // 기존 계정에 소셜 연결
+               user.setProvider(provider);
+               user.setProviderId(userInfo.getId());
+               return userRepository.save(user);
+           }
+
+           // 새 사용자 생성
+           User newUser = User.builder()
+               .email(userInfo.getEmail())
+               .name(userInfo.getName())
+               .profileImageUrl(userInfo.getImageUrl())
+               .provider(provider)
+               .providerId(userInfo.getId())
+               .build();
+
+           return userRepository.save(newUser);
+       }
+   }
+   ```
+
+6. OAuth2UserInfo 추상화
+   ```java
+   public abstract class OAuth2UserInfo {
+       protected Map<String, Object> attributes;
+
+       public abstract String getId();
+       public abstract String getName();
+       public abstract String getEmail();
+       public abstract String getImageUrl();
+   }
+
+   public class GoogleOAuth2UserInfo extends OAuth2UserInfo {
+       public GoogleOAuth2UserInfo(Map<String, Object> attributes) {
+           this.attributes = attributes;
+       }
+
+       @Override
+       public String getId() { return (String) attributes.get("sub"); }
+
+       @Override
+       public String getName() { return (String) attributes.get("name"); }
+
+       @Override
+       public String getEmail() { return (String) attributes.get("email"); }
+
+       @Override
+       public String getImageUrl() { return (String) attributes.get("picture"); }
+   }
+
+   public class GitHubOAuth2UserInfo extends OAuth2UserInfo {
+       @Override
+       public String getId() { return String.valueOf(attributes.get("id")); }
+
+       @Override
+       public String getName() { return (String) attributes.get("name"); }
+
+       @Override
+       public String getEmail() { return (String) attributes.get("email"); }
+
+       @Override
+       public String getImageUrl() { return (String) attributes.get("avatar_url"); }
+   }
+   ```
+
+7. OAuth2 성공 핸들러
+   ```java
+   @Component
+   public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
+
+       private final JwtTokenProvider tokenProvider;
+
+       @Value("${app.oauth2.redirect-uri}")
+       private String redirectUri;
+
+       @Override
+       public void onAuthenticationSuccess(HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            Authentication authentication) throws IOException {
+
+           CustomOAuth2User oAuth2User = (CustomOAuth2User) authentication.getPrincipal();
+           User user = oAuth2User.getUser();
+
+           // JWT 토큰 생성
+           String accessToken = tokenProvider.createAccessToken(user.getEmail());
+           String refreshToken = tokenProvider.createRefreshToken(user.getEmail());
+
+           // 프론트엔드로 리다이렉트 (토큰 포함)
+           String targetUrl = UriComponentsBuilder.fromUriString(redirectUri)
+               .queryParam("token", accessToken)
+               .queryParam("refreshToken", refreshToken)
+               .build().toUriString();
+
+           getRedirectStrategy().sendRedirect(request, response, targetUrl);
+       }
+   }
+   ```
+
+8. 프론트엔드 OAuth 버튼
+   ```tsx
+   export function SocialLoginButtons() {
+     const baseUrl = import.meta.env.VITE_API_URL;
+
+     return (
+       <div className="space-y-3">
+         <a
+           href={`${baseUrl}/oauth2/authorize/google`}
+           className="flex items-center justify-center gap-3 w-full p-3 border rounded-lg hover:bg-gray-50"
+         >
+           <GoogleIcon />
+           <span>Google로 계속하기</span>
+         </a>
+
+         <a
+           href={`${baseUrl}/oauth2/authorize/github`}
+           className="flex items-center justify-center gap-3 w-full p-3 border rounded-lg hover:bg-gray-50"
+         >
+           <GitHubIcon />
+           <span>GitHub로 계속하기</span>
+         </a>
+       </div>
+     );
+   }
+   ```
+
+9. OAuth 콜백 페이지
+   ```tsx
+   export function OAuth2CallbackPage() {
+     const navigate = useNavigate();
+     const location = useLocation();
+     const { setTokens } = useAuth();
+
+     useEffect(() => {
+       const params = new URLSearchParams(location.search);
+       const token = params.get('token');
+       const refreshToken = params.get('refreshToken');
+       const error = params.get('error');
+
+       if (error) {
+         toast.error('로그인에 실패했습니다');
+         navigate('/login');
+         return;
+       }
+
+       if (token && refreshToken) {
+         setTokens(token, refreshToken);
+         navigate('/dashboard');
+       }
+     }, [location]);
+
+     return <LoadingSpinner />;
+   }
+   ```
+
+[테스트 기준]
+- [ ] Google 로그인 버튼 클릭 → Google 인증 페이지
+- [ ] Google 인증 완료 → 대시보드 이동
+- [ ] GitHub 로그인 버튼 클릭 → GitHub 인증 페이지
+- [ ] GitHub 인증 완료 → 대시보드 이동
+- [ ] 기존 이메일 계정에 소셜 연결
+- [ ] 새 소셜 사용자 자동 가입
+- [ ] JWT 토큰 정상 발급
+
+[참고 자료]
+- Spring OAuth2 Client: https://docs.spring.io/spring-security/reference/servlet/oauth2/client/index.html
+- Google OAuth: https://developers.google.com/identity/protocols/oauth2
+- GitHub OAuth: https://docs.github.com/en/developers/apps/building-oauth-apps

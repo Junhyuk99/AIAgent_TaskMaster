@@ -1,0 +1,50 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+  # Disable OAuth2 for tests
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: test-google-client-id
+            client-secret: test-google-client-secret
+          github:
+            client-id: test-github-client-id
+            client-secret: test-github-client-secret
+
+  # Disable async for testing
+  task:
+    execution:
+      pool:
+        core-size: 1
+        max-size: 1
+
+jwt:
+  secret: test-secret-key-for-testing-purposes-only-256-bits-minimum-length
+  expiration: 86400000
+  refresh-expiration: 604800000
+
+# Disable external services for tests
+external-api:
+  enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.aiagent: DEBUG
+    org.springframework.test: INFO
+    org.testcontainers: INFO

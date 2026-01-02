@@ -1,0 +1,251 @@
+================================================================================
+TASK #018: 지식 베이스 관리 API 구현
+================================================================================
+
+[기본 정보]
+- ID: 18
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템)
+
+[설명]
+지식 베이스 CRUD, 문서 업로드/삭제/조회, 검색 테스트 API 구현
+
+[상세 구현 가이드]
+1. 계층 구조 생성
+   ```
+   src/main/java/com/aiagent/
+   ├── controller/
+   │   ├── KnowledgeBaseController.java
+   │   └── DocumentController.java
+   ├── service/
+   │   ├── KnowledgeBaseService.java
+   │   └── DocumentService.java
+   ├── repository/
+   │   ├── KnowledgeBaseRepository.java
+   │   └── DocumentRepository.java
+   └── dto/
+       ├── KnowledgeBaseRequest.java
+       ├── KnowledgeBaseResponse.java
+       ├── DocumentResponse.java
+       └── SearchRequest.java
+   ```
+
+2. KnowledgeBaseController API
+   ```java
+   @RestController
+   @RequestMapping("/api/knowledge-bases")
+   public class KnowledgeBaseController {
+
+       @GetMapping
+       public Page<KnowledgeBaseResponse> getKnowledgeBases(Pageable pageable);
+
+       @PostMapping
+       public KnowledgeBaseResponse createKnowledgeBase(
+           @Valid @RequestBody KnowledgeBaseRequest request);
+
+       @GetMapping("/{id}")
+       public KnowledgeBaseResponse getKnowledgeBase(@PathVariable Long id);
+
+       @PutMapping("/{id}")
+       public KnowledgeBaseResponse updateKnowledgeBase(
+           @PathVariable Long id,
+           @Valid @RequestBody KnowledgeBaseRequest request);
+
+       @DeleteMapping("/{id}")
+       public void deleteKnowledgeBase(@PathVariable Long id);
+
+       @PostMapping("/{id}/search")
+       public SearchResponse search(
+           @PathVariable Long id,
+           @RequestBody SearchRequest request);
+   }
+   ```
+
+3. DocumentController API
+   ```java
+   @RestController
+   @RequestMapping("/api/knowledge-bases/{kbId}/documents")
+   public class DocumentController {
+
+       @GetMapping
+       public Page<DocumentResponse> getDocuments(
+           @PathVariable Long kbId,
+           Pageable pageable);
+
+       @PostMapping
+       public DocumentResponse uploadDocument(
+           @PathVariable Long kbId,
+           @RequestParam("file") MultipartFile file);
+
+       @PostMapping("/batch")
+       public List<DocumentResponse> uploadDocuments(
+           @PathVariable Long kbId,
+           @RequestParam("files") List<MultipartFile> files);
+
+       @GetMapping("/{docId}")
+       public DocumentResponse getDocument(
+           @PathVariable Long kbId,
+           @PathVariable Long docId);
+
+       @DeleteMapping("/{docId}")
+       public void deleteDocument(
+           @PathVariable Long kbId,
+           @PathVariable Long docId);
+
+       @PostMapping("/{docId}/reindex")
+       public DocumentResponse reindexDocument(
+           @PathVariable Long kbId,
+           @PathVariable Long docId);
+   }
+   ```
+
+4. KnowledgeBaseRequest DTO
+   ```java
+   @Data
+   public class KnowledgeBaseRequest {
+       @NotBlank
+       @Size(max = 100)
+       private String name;
+
+       @Size(max = 500)
+       private String description;
+
+       private String embeddingModel = "nomic-embed-text";
+
+       @Min(100) @Max(2000)
+       private Integer chunkSize = 500;
+
+       @Min(0) @Max(500)
+       private Integer chunkOverlap = 50;
+
+       private ChunkingStrategy chunkingStrategy = ChunkingStrategy.FIXED_SIZE;
+   }
+
+   public enum ChunkingStrategy {
+       FIXED_SIZE,      // 고정 크기
+       PARAGRAPH,       // 문단별
+       SEMANTIC         // 의미 기반
+   }
+   ```
+
+5. KnowledgeBaseResponse DTO
+   ```java
+   @Data
+   public class KnowledgeBaseResponse {
+       private Long id;
+       private String name;
+       private String description;
+       private String embeddingModel;
+       private Integer chunkSize;
+       private Integer chunkOverlap;
+       private ChunkingStrategy chunkingStrategy;
+       private Integer documentCount;
+       private Integer totalChunks;
+       private Long totalSize;  // bytes
+       private LocalDateTime createdAt;
+       private LocalDateTime updatedAt;
+   }
+   ```
+
+6. DocumentResponse DTO
+   ```java
+   @Data
+   public class DocumentResponse {
+       private Long id;
+       private String filename;
+       private String mimeType;
+       private Long fileSize;
+       private Integer chunkCount;
+       private DocumentStatus status;  // PENDING, PROCESSING, COMPLETED, FAILED
+       private String errorMessage;
+       private Integer progress;  // 0-100
+       private LocalDateTime createdAt;
+   }
+   ```
+
+7. KnowledgeBaseService 구현
+   ```java
+   @Service
+   @Transactional
+   public class KnowledgeBaseService {
+
+       public void deleteKnowledgeBase(Long id, Long userId) {
+           KnowledgeBase kb = getKnowledgeBaseWithOwnerCheck(id, userId);
+
+           // 연결된 에이전트 확인
+           if (!kb.getAgents().isEmpty()) {
+               throw new BadRequestException(
+                   "이 지식 베이스를 사용중인 에이전트가 있습니다: " +
+                   kb.getAgents().stream().map(Agent::getName).collect(Collectors.joining(", ")));
+           }
+
+           // 문서 파일 삭제
+           for (Document doc : kb.getDocuments()) {
+               fileStorageService.delete(doc.getFilePath());
+           }
+
+           // 벡터 DB 컬렉션 삭제
+           vectorStore.deleteCollection(kb.getCollectionName());
+
+           knowledgeBaseRepository.delete(kb);
+       }
+
+       public SearchResponse search(Long id, SearchRequest request, Long userId) {
+           KnowledgeBase kb = getKnowledgeBaseWithOwnerCheck(id, userId);
+
+           List<SearchResult> results = vectorStore.search(
+               kb.getCollectionName(),
+               request.getQuery(),
+               request.getTopK()
+           );
+
+           return SearchResponse.builder()
+               .query(request.getQuery())
+               .results(results)
+               .build();
+       }
+   }
+   ```
+
+8. SearchRequest/Response
+   ```java
+   @Data
+   public class SearchRequest {
+       @NotBlank
+       private String query;
+
+       @Min(1) @Max(20)
+       private Integer topK = 5;
+
+       private Double minScore = 0.5;  // 최소 유사도
+   }
+
+   @Data
+   public class SearchResponse {
+       private String query;
+       private List<SearchResult> results;
+   }
+
+   @Data
+   public class SearchResult {
+       private String content;
+       private Double score;
+       private String documentName;
+       private Integer chunkIndex;
+       private Map<String, Object> metadata;
+   }
+   ```
+
+[테스트 기준]
+- [ ] 지식 베이스 CRUD 전체 동작
+- [ ] 문서 업로드 → PENDING 상태로 생성
+- [ ] 문서 목록 조회 (페이징)
+- [ ] 문서 삭제 → 파일 및 벡터 삭제
+- [ ] 검색 테스트 → 관련 청크 반환
+- [ ] 지식 베이스 삭제 시 연결된 에이전트 체크
+- [ ] 다른 사용자 지식 베이스 접근 차단
+
+[참고 자료]
+- Spring File Upload: https://spring.io/guides/gs/uploading-files/

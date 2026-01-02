@@ -1,0 +1,295 @@
+================================================================================
+TASK #023: RAG 검색 및 컨텍스트 주입 구현
+================================================================================
+
+[기본 정보]
+- ID: 23
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #22 (벡터 DB 연동), Task #12 (기본 채팅 테스트 기능)
+
+[설명]
+사용자 쿼리로 관련 문서 검색, LLM 프롬프트에 컨텍스트 주입
+
+[상세 구현 가이드]
+1. RagService 클래스
+   ```java
+   @Service
+   public class RagService {
+
+       private final EmbeddingService embeddingService;
+       private final VectorStore vectorStore;
+       private final KnowledgeBaseService knowledgeBaseService;
+
+       /**
+        * 쿼리에 대한 관련 컨텍스트 검색
+        */
+       public RagContext retrieveContext(Agent agent, String query) {
+           List<KnowledgeBase> knowledgeBases = agent.getKnowledgeBases();
+
+           if (knowledgeBases.isEmpty()) {
+               return RagContext.empty();
+           }
+
+           // 쿼리 임베딩
+           float[] queryEmbedding = embeddingService.embed(query);
+
+           List<RagChunk> allChunks = new ArrayList<>();
+
+           // 각 지식 베이스에서 검색
+           for (KnowledgeBase kb : knowledgeBases) {
+               String collectionName = knowledgeBaseService.getCollectionName(kb);
+
+               List<SearchResult> results = vectorStore.search(
+                   collectionName,
+                   queryEmbedding,
+                   5,  // Top-K per knowledge base
+                   0.5 // 최소 유사도
+               );
+
+               for (SearchResult result : results) {
+                   allChunks.add(RagChunk.builder()
+                       .content(result.getContent())
+                       .score(result.getScore())
+                       .knowledgeBaseName(kb.getName())
+                       .documentId((Long) result.getMetadata().get("documentId"))
+                       .chunkIndex((Integer) result.getMetadata().get("chunkIndex"))
+                       .build());
+               }
+           }
+
+           // 전체 결과 재정렬 (점수 기준)
+           allChunks.sort((a, b) -> Double.compare(b.getScore(), a.getScore()));
+
+           // 상위 N개만 선택
+           List<RagChunk> topChunks = allChunks.stream()
+               .limit(5)
+               .collect(Collectors.toList());
+
+           return RagContext.builder()
+               .chunks(topChunks)
+               .query(query)
+               .build();
+       }
+   }
+   ```
+
+2. RagContext 및 RagChunk
+   ```java
+   @Data
+   @Builder
+   public class RagContext {
+       private List<RagChunk> chunks;
+       private String query;
+
+       public static RagContext empty() {
+           return RagContext.builder()
+               .chunks(Collections.emptyList())
+               .query("")
+               .build();
+       }
+
+       public boolean isEmpty() {
+           return chunks == null || chunks.isEmpty();
+       }
+
+       public String formatForPrompt() {
+           if (isEmpty()) return "";
+
+           StringBuilder sb = new StringBuilder();
+           sb.append("다음은 질문과 관련된 참고 자료입니다:\n\n");
+
+           for (int i = 0; i < chunks.size(); i++) {
+               RagChunk chunk = chunks.get(i);
+               sb.append(String.format("[%d] (출처: %s)\n", i + 1, chunk.getKnowledgeBaseName()));
+               sb.append(chunk.getContent());
+               sb.append("\n\n");
+           }
+
+           sb.append("위 참고 자료를 바탕으로 질문에 답변해주세요. ");
+           sb.append("참고 자료에 없는 내용은 '해당 정보가 제공된 자료에 없습니다'라고 답변해주세요.\n\n");
+
+           return sb.toString();
+       }
+   }
+
+   @Data
+   @Builder
+   public class RagChunk {
+       private String content;
+       private Double score;
+       private String knowledgeBaseName;
+       private Long documentId;
+       private Integer chunkIndex;
+   }
+   ```
+
+3. ChatService RAG 통합
+   ```java
+   @Service
+   public class ChatService {
+
+       public ChatMessageResponse chat(Long agentId, ChatMessageRequest request, Long userId) {
+           Agent agent = getAgentWithRelations(agentId, userId);
+
+           // RAG 컨텍스트 검색
+           RagContext ragContext = ragService.retrieveContext(agent, request.getMessage());
+
+           // 메시지 구성
+           List<Message> messages = new ArrayList<>();
+
+           // 시스템 프롬프트 + RAG 컨텍스트
+           String systemPrompt = agent.getSystemPrompt();
+           if (!ragContext.isEmpty()) {
+               systemPrompt = ragContext.formatForPrompt() + "\n\n" + systemPrompt;
+           }
+           messages.add(new Message("system", systemPrompt));
+
+           // 대화 히스토리
+           messages.addAll(request.getHistory());
+
+           // 사용자 메시지
+           messages.add(new Message("user", request.getMessage()));
+
+           // LLM 호출
+           ChatResponse llmResponse = connector.chat(buildChatRequest(agent, messages));
+
+           // 응답에 소스 정보 포함
+           return ChatMessageResponse.builder()
+               .content(llmResponse.getContent())
+               .sources(convertToSources(ragContext))
+               .build();
+       }
+
+       private List<SourceInfo> convertToSources(RagContext context) {
+           if (context.isEmpty()) return Collections.emptyList();
+
+           return context.getChunks().stream()
+               .map(chunk -> SourceInfo.builder()
+                   .knowledgeBaseName(chunk.getKnowledgeBaseName())
+                   .documentId(chunk.getDocumentId())
+                   .relevanceScore(chunk.getScore())
+                   .preview(truncate(chunk.getContent(), 200))
+                   .build())
+               .collect(Collectors.toList());
+       }
+   }
+   ```
+
+4. ChatMessageResponse 소스 정보
+   ```java
+   @Data
+   @Builder
+   public class ChatMessageResponse {
+       private String content;
+       private String model;
+       private List<SourceInfo> sources;  // RAG 소스
+       private LocalDateTime timestamp;
+   }
+
+   @Data
+   @Builder
+   public class SourceInfo {
+       private String knowledgeBaseName;
+       private Long documentId;
+       private String documentName;
+       private Double relevanceScore;
+       private String preview;
+   }
+   ```
+
+5. 프론트엔드 소스 표시
+   ```tsx
+   export function ChatMessage({ message }: Props) {
+     const isAssistant = message.role === 'assistant';
+
+     return (
+       <div className="...">
+         <ReactMarkdown>{message.content}</ReactMarkdown>
+
+         {/* RAG 소스 표시 */}
+         {isAssistant && message.sources && message.sources.length > 0 && (
+           <div className="mt-3 border-t pt-3">
+             <p className="text-sm text-gray-500 mb-2">참고 자료:</p>
+             <div className="space-y-2">
+               {message.sources.map((source, idx) => (
+                 <SourceCard key={idx} source={source} />
+               ))}
+             </div>
+           </div>
+         )}
+       </div>
+     );
+   }
+
+   function SourceCard({ source }: { source: SourceInfo }) {
+     return (
+       <div className="bg-gray-50 rounded p-2 text-sm">
+         <div className="flex justify-between">
+           <span className="font-medium">{source.knowledgeBaseName}</span>
+           <span className="text-gray-400">
+             {(source.relevanceScore * 100).toFixed(0)}% 관련
+           </span>
+         </div>
+         <p className="text-gray-600 mt-1 line-clamp-2">{source.preview}</p>
+       </div>
+     );
+   }
+   ```
+
+6. 검색 테스트 API (지식 베이스)
+   ```java
+   @PostMapping("/{id}/search")
+   public SearchResponse testSearch(@PathVariable Long id,
+                                    @RequestBody SearchRequest request) {
+       KnowledgeBase kb = getKnowledgeBaseWithOwnerCheck(id, getCurrentUserId());
+
+       float[] queryEmbedding = embeddingService.embed(request.getQuery());
+
+       List<SearchResult> results = vectorStore.search(
+           knowledgeBaseService.getCollectionName(kb),
+           queryEmbedding,
+           request.getTopK(),
+           request.getMinScore()
+       );
+
+       return SearchResponse.builder()
+           .query(request.getQuery())
+           .results(results)
+           .totalCount(results.size())
+           .build();
+   }
+   ```
+
+7. 컨텍스트 윈도우 관리
+   ```java
+   private String buildSystemPromptWithRag(Agent agent, RagContext context) {
+       String basePrompt = agent.getSystemPrompt();
+       String ragPrompt = context.formatForPrompt();
+
+       // 토큰 수 추정 (대략 4자 = 1토큰)
+       int estimatedTokens = (basePrompt.length() + ragPrompt.length()) / 4;
+       int maxContextTokens = agent.getMaxTokens() / 2;  // 응답을 위해 절반 남김
+
+       if (estimatedTokens > maxContextTokens) {
+           // 컨텍스트 축소
+           int chunksToKeep = Math.max(1, context.getChunks().size() / 2);
+           context.setChunks(context.getChunks().subList(0, chunksToKeep));
+           ragPrompt = context.formatForPrompt();
+       }
+
+       return ragPrompt + "\n\n" + basePrompt;
+   }
+   ```
+
+[테스트 기준]
+- [ ] 지식 베이스 연결된 에이전트 채팅 시 RAG 동작
+- [ ] 관련 청크가 프롬프트에 주입됨
+- [ ] 응답에 소스 정보 포함
+- [ ] 지식 베이스 없는 에이전트 → 일반 채팅
+- [ ] 검색 테스트 API 동작
+- [ ] 컨텍스트 윈도우 초과 시 축소 처리
+
+[참고 자료]
+- RAG 패턴: https://www.pinecone.io/learn/retrieval-augmented-generation/

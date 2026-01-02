@@ -1,0 +1,313 @@
+================================================================================
+TASK #021: 청킹 및 임베딩 처리 구현
+================================================================================
+
+[기본 정보]
+- ID: 21
+- 우선순위: high
+- 복잡도: 7/10
+- 상태: pending
+- 의존성: Task #20 (문서 파싱 시스템)
+
+[설명]
+문서 텍스트 청킹, 임베딩 모델을 통한 벡터 변환
+
+[상세 구현 가이드]
+1. ChunkingService 인터페이스
+   ```java
+   public interface ChunkingStrategy {
+       List<TextChunk> chunk(String text, ChunkingConfig config);
+   }
+
+   @Data
+   @Builder
+   public class TextChunk {
+       private String content;
+       private int index;
+       private int startOffset;
+       private int endOffset;
+       private Map<String, Object> metadata;
+   }
+
+   @Data
+   public class ChunkingConfig {
+       private int chunkSize = 500;
+       private int chunkOverlap = 50;
+       private ChunkingStrategyType strategyType;
+   }
+   ```
+
+2. 고정 크기 청킹
+   ```java
+   @Component
+   public class FixedSizeChunker implements ChunkingStrategy {
+
+       @Override
+       public List<TextChunk> chunk(String text, ChunkingConfig config) {
+           List<TextChunk> chunks = new ArrayList<>();
+           int chunkSize = config.getChunkSize();
+           int overlap = config.getChunkOverlap();
+
+           int start = 0;
+           int index = 0;
+
+           while (start < text.length()) {
+               int end = Math.min(start + chunkSize, text.length());
+
+               // 단어 경계에서 자르기 (단어 중간에서 자르지 않음)
+               if (end < text.length()) {
+                   int lastSpace = text.lastIndexOf(' ', end);
+                   if (lastSpace > start) {
+                       end = lastSpace;
+                   }
+               }
+
+               String chunkContent = text.substring(start, end).trim();
+
+               if (!chunkContent.isEmpty()) {
+                   chunks.add(TextChunk.builder()
+                       .content(chunkContent)
+                       .index(index++)
+                       .startOffset(start)
+                       .endOffset(end)
+                       .build());
+               }
+
+               start = end - overlap;
+               if (start >= text.length() - overlap) break;
+           }
+
+           return chunks;
+       }
+   }
+   ```
+
+3. 문단별 청킹
+   ```java
+   @Component
+   public class ParagraphChunker implements ChunkingStrategy {
+
+       @Override
+       public List<TextChunk> chunk(String text, ChunkingConfig config) {
+           List<TextChunk> chunks = new ArrayList<>();
+
+           // 빈 줄로 문단 분리
+           String[] paragraphs = text.split("\\n\\s*\\n");
+
+           int index = 0;
+           int offset = 0;
+           StringBuilder currentChunk = new StringBuilder();
+
+           for (String paragraph : paragraphs) {
+               paragraph = paragraph.trim();
+               if (paragraph.isEmpty()) continue;
+
+               // 청크 크기 초과 시 현재 청크 저장
+               if (currentChunk.length() + paragraph.length() > config.getChunkSize()
+                   && currentChunk.length() > 0) {
+                   chunks.add(createChunk(currentChunk.toString(), index++, offset));
+                   offset += currentChunk.length();
+                   currentChunk = new StringBuilder();
+               }
+
+               if (currentChunk.length() > 0) {
+                   currentChunk.append("\n\n");
+               }
+               currentChunk.append(paragraph);
+
+               // 단일 문단이 청크 크기 초과 시 분할
+               if (currentChunk.length() > config.getChunkSize()) {
+                   List<TextChunk> subChunks = fixedSizeChunker.chunk(
+                       currentChunk.toString(), config);
+                   for (TextChunk subChunk : subChunks) {
+                       subChunk.setIndex(index++);
+                       chunks.add(subChunk);
+                   }
+                   currentChunk = new StringBuilder();
+               }
+           }
+
+           // 마지막 청크
+           if (currentChunk.length() > 0) {
+               chunks.add(createChunk(currentChunk.toString(), index, offset));
+           }
+
+           return chunks;
+       }
+   }
+   ```
+
+4. 의미 기반 청킹 (문장 단위)
+   ```java
+   @Component
+   public class SemanticChunker implements ChunkingStrategy {
+
+       @Override
+       public List<TextChunk> chunk(String text, ChunkingConfig config) {
+           List<TextChunk> chunks = new ArrayList<>();
+
+           // 문장 분리 (. ! ? 기준)
+           String[] sentences = text.split("(?<=[.!?])\\s+");
+
+           StringBuilder currentChunk = new StringBuilder();
+           int index = 0;
+
+           for (String sentence : sentences) {
+               if (currentChunk.length() + sentence.length() > config.getChunkSize()
+                   && currentChunk.length() > 0) {
+                   chunks.add(createChunk(currentChunk.toString().trim(), index++));
+                   currentChunk = new StringBuilder();
+               }
+
+               currentChunk.append(sentence).append(" ");
+           }
+
+           if (currentChunk.length() > 0) {
+               chunks.add(createChunk(currentChunk.toString().trim(), index));
+           }
+
+           return chunks;
+       }
+   }
+   ```
+
+5. EmbeddingService 인터페이스
+   ```java
+   public interface EmbeddingService {
+       float[] embed(String text);
+       List<float[]> embedBatch(List<String> texts);
+       int getDimension();
+   }
+   ```
+
+6. Ollama 임베딩 서비스
+   ```java
+   @Service
+   public class OllamaEmbeddingService implements EmbeddingService {
+
+       private final WebClient webClient;
+       private final String model;
+       private final int dimension;
+
+       public OllamaEmbeddingService(
+           @Value("${embedding.ollama.url:http://localhost:11434}") String baseUrl,
+           @Value("${embedding.ollama.model:nomic-embed-text}") String model) {
+           this.webClient = WebClient.builder().baseUrl(baseUrl).build();
+           this.model = model;
+           this.dimension = 768;  // nomic-embed-text 기준
+       }
+
+       @Override
+       public float[] embed(String text) {
+           OllamaEmbedRequest request = new OllamaEmbedRequest(model, text);
+
+           OllamaEmbedResponse response = webClient.post()
+               .uri("/api/embeddings")
+               .bodyValue(request)
+               .retrieve()
+               .bodyToMono(OllamaEmbedResponse.class)
+               .block();
+
+           return toFloatArray(response.getEmbedding());
+       }
+
+       @Override
+       public List<float[]> embedBatch(List<String> texts) {
+           // Ollama는 배치 미지원, 순차 처리
+           return texts.stream()
+               .map(this::embed)
+               .collect(Collectors.toList());
+       }
+
+       @Override
+       public int getDimension() {
+           return dimension;
+       }
+   }
+   ```
+
+7. 문서 처리 파이프라인 통합
+   ```java
+   @Service
+   public class DocumentProcessingService {
+
+       @Async
+       @Transactional
+       public void processDocument(Long documentId) {
+           Document document = documentRepository.findById(documentId).orElseThrow();
+
+           try {
+               document.setStatus(DocumentStatus.PROCESSING);
+               documentRepository.save(document);
+
+               // 1. 파일 로드
+               Resource resource = fileStorageService.load(document.getFilePath());
+
+               // 2. 파싱
+               DocumentParser parser = parserFactory.getParser(document.getFilename());
+               ParseResult parseResult = parser.parse(resource.getInputStream(), document.getFilename());
+
+               // 3. 청킹
+               KnowledgeBase kb = document.getKnowledgeBase();
+               ChunkingConfig config = ChunkingConfig.builder()
+                   .chunkSize(kb.getChunkSize())
+                   .chunkOverlap(kb.getChunkOverlap())
+                   .strategyType(kb.getChunkingStrategy())
+                   .build();
+
+               ChunkingStrategy chunker = chunkerFactory.getChunker(config.getStrategyType());
+               List<TextChunk> chunks = chunker.chunk(parseResult.getContent(), config);
+
+               // 4. 임베딩
+               List<String> texts = chunks.stream()
+                   .map(TextChunk::getContent)
+                   .collect(Collectors.toList());
+               List<float[]> embeddings = embeddingService.embedBatch(texts);
+
+               // 5. 벡터 DB 저장 (다음 태스크)
+               vectorStore.upsert(kb.getCollectionName(), chunks, embeddings, document.getId());
+
+               // 6. 상태 업데이트
+               document.setChunkCount(chunks.size());
+               document.setStatus(DocumentStatus.COMPLETED);
+
+           } catch (Exception e) {
+               log.error("Document processing failed: {}", documentId, e);
+               document.setStatus(DocumentStatus.FAILED);
+               document.setErrorMessage(e.getMessage());
+           }
+
+           documentRepository.save(document);
+       }
+   }
+   ```
+
+8. 진행 상태 업데이트
+   ```java
+   public void updateProgress(Long documentId, int progress, String stage) {
+       Document document = documentRepository.findById(documentId).orElseThrow();
+       document.setProgress(progress);
+       document.setProcessingStage(stage);
+       documentRepository.save(document);
+
+       // WebSocket으로 클라이언트에 알림 (옵션)
+       messagingTemplate.convertAndSendToUser(
+           document.getKnowledgeBase().getUserId().toString(),
+           "/queue/document-progress",
+           new DocumentProgressEvent(documentId, progress, stage)
+       );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 고정 크기 청킹 → 지정 크기로 분할 확인
+- [ ] 문단별 청킹 → 문단 경계 유지 확인
+- [ ] 청크 오버랩 적용 확인
+- [ ] Ollama 임베딩 API 호출 → 벡터 반환
+- [ ] 배치 임베딩 처리 확인
+- [ ] 전체 파이프라인 (파싱 → 청킹 → 임베딩) 동작
+- [ ] 진행 상태 업데이트 확인
+
+[참고 자료]
+- Ollama Embeddings API: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-embeddings
+- Text Chunking Strategies: https://www.pinecone.io/learn/chunking-strategies/

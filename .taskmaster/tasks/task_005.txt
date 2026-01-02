@@ -1,0 +1,112 @@
+================================================================================
+TASK #005: 기본 UI 레이아웃 구현
+================================================================================
+
+[기본 정보]
+- ID: 5
+- 우선순위: high
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #2 (React 프로젝트 초기 설정)
+
+[설명]
+헤더, 사이드바, 메인 콘텐츠 영역 레이아웃 컴포넌트 구현, 라우팅 설정
+
+[상세 구현 가이드]
+1. 레이아웃 컴포넌트 구조
+   ```
+   src/components/layout/
+   ├── Layout.tsx          # 전체 레이아웃 래퍼
+   ├── Header.tsx          # 상단 헤더
+   ├── Sidebar.tsx         # 좌측 사이드바
+   ├── MainContent.tsx     # 메인 콘텐츠 영역
+   └── MobileNav.tsx       # 모바일 네비게이션
+   ```
+
+2. Layout 컴포넌트
+   ```tsx
+   export function Layout({ children }: { children: React.ReactNode }) {
+     return (
+       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+         <Header />
+         <div className="flex">
+           <Sidebar />
+           <MainContent>{children}</MainContent>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+3. Header 컴포넌트
+   - 로고
+   - 검색 바 (옵션)
+   - 다크모드 토글
+   - 사용자 프로필 드롭다운
+   - 모바일: 햄버거 메뉴
+
+4. Sidebar 컴포넌트
+   - 네비게이션 메뉴:
+     - 대시보드 (/dashboard)
+     - 에이전트 (/agents)
+     - 함수 (/functions)
+     - 지식 (/knowledge)
+     - 설정 (/settings/llm)
+   - 활성 메뉴 하이라이트
+   - 접기/펼치기 기능
+   - 모바일: 오버레이로 표시
+
+5. 다크모드 구현
+   ```tsx
+   // stores/themeStore.ts
+   export const useThemeStore = create<ThemeState>((set) => ({
+     isDark: false,
+     toggle: () => set((state) => ({ isDark: !state.isDark })),
+   }));
+
+   // 최상위에서 클래스 적용
+   <html className={isDark ? 'dark' : ''}>
+   ```
+
+6. 반응형 디자인
+   - Desktop (lg+): 사이드바 항상 표시
+   - Tablet (md): 사이드바 축소 모드
+   - Mobile (sm): 사이드바 숨김, 햄버거 메뉴로 토글
+
+7. 공통 UI 컴포넌트
+   ```
+   src/components/ui/
+   ├── Button.tsx
+   ├── Input.tsx
+   ├── Card.tsx
+   ├── Modal.tsx
+   ├── Spinner.tsx
+   ├── Toast.tsx
+   └── ErrorBoundary.tsx
+   ```
+
+8. 라우트 보호 (ProtectedRoute)
+   ```tsx
+   function ProtectedRoute({ children }: { children: React.ReactNode }) {
+     const { isAuthenticated } = useAuth();
+
+     if (!isAuthenticated) {
+       return <Navigate to="/login" />;
+     }
+
+     return <Layout>{children}</Layout>;
+   }
+   ```
+
+[테스트 기준]
+- [ ] 각 라우트 접근 시 올바른 페이지 렌더링
+- [ ] 사이드바 메뉴 클릭 시 라우트 전환
+- [ ] 다크모드 토글 동작 확인
+- [ ] 모바일 뷰에서 사이드바 토글 동작
+- [ ] 반응형 레이아웃 (320px ~ 1920px) 확인
+- [ ] 로딩 스피너 표시 확인
+- [ ] 에러 바운더리 동작 확인
+
+[참고 자료]
+- Tailwind CSS 반응형: https://tailwindcss.com/docs/responsive-design
+- React Router: https://reactrouter.com/

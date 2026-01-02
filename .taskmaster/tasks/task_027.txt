@@ -1,0 +1,287 @@
+================================================================================
+TASK #027: API 키 관리 기능 구현
+================================================================================
+
+[기본 정보]
+- ID: 27
+- 우선순위: medium
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템)
+
+[설명]
+사용자별 API 키 발급, 조회, 삭제 기능
+
+[상세 구현 가이드]
+1. ApiKey 엔티티
+   ```java
+   @Entity
+   public class ApiKey {
+       @Id @GeneratedValue
+       private Long id;
+
+       @ManyToOne
+       private User user;
+
+       private String name;  // API 키 별칭
+
+       private String keyPrefix;  // "ak_" + 처음 8자 (표시용)
+
+       private String keyHash;  // BCrypt 해시 (검증용)
+
+       private LocalDateTime lastUsedAt;
+
+       private Long usageCount;
+
+       private Boolean isActive = true;
+
+       private LocalDateTime expiresAt;  // null이면 무제한
+
+       private LocalDateTime createdAt;
+   }
+   ```
+
+2. ApiKeyController API
+   ```java
+   @RestController
+   @RequestMapping("/api/api-keys")
+   public class ApiKeyController {
+
+       @GetMapping
+       public List<ApiKeyResponse> getApiKeys();
+
+       @PostMapping
+       public ApiKeyCreateResponse createApiKey(@Valid @RequestBody ApiKeyRequest request);
+
+       @GetMapping("/{id}")
+       public ApiKeyResponse getApiKey(@PathVariable Long id);
+
+       @DeleteMapping("/{id}")
+       public void deleteApiKey(@PathVariable Long id);
+
+       @PostMapping("/{id}/regenerate")
+       public ApiKeyCreateResponse regenerateApiKey(@PathVariable Long id);
+   }
+   ```
+
+3. API 키 생성 로직
+   ```java
+   @Service
+   public class ApiKeyService {
+
+       private final PasswordEncoder passwordEncoder;
+
+       public ApiKeyCreateResponse createApiKey(ApiKeyRequest request, Long userId) {
+           // API 키 생성 (prefix + random)
+           String rawKey = generateApiKey();
+
+           ApiKey apiKey = ApiKey.builder()
+               .user(userRepository.findById(userId).orElseThrow())
+               .name(request.getName())
+               .keyPrefix(rawKey.substring(0, 12))  // "ak_" + 8자
+               .keyHash(passwordEncoder.encode(rawKey))
+               .expiresAt(request.getExpiresAt())
+               .isActive(true)
+               .usageCount(0L)
+               .createdAt(LocalDateTime.now())
+               .build();
+
+           apiKeyRepository.save(apiKey);
+
+           // 원본 키는 이때만 반환 (다시 조회 불가)
+           return ApiKeyCreateResponse.builder()
+               .id(apiKey.getId())
+               .name(apiKey.getName())
+               .key(rawKey)  // 원본 키 반환
+               .keyPrefix(apiKey.getKeyPrefix())
+               .expiresAt(apiKey.getExpiresAt())
+               .createdAt(apiKey.getCreatedAt())
+               .build();
+       }
+
+       private String generateApiKey() {
+           // "ak_" + 32자 랜덤 문자열
+           String random = UUID.randomUUID().toString().replace("-", "") +
+                          UUID.randomUUID().toString().replace("-", "");
+           return "ak_" + random.substring(0, 32);
+       }
+
+       public ApiKey validateApiKey(String rawKey) {
+           // prefix로 후보 찾기
+           String prefix = rawKey.substring(0, 12);
+           List<ApiKey> candidates = apiKeyRepository.findByKeyPrefixAndIsActiveTrue(prefix);
+
+           for (ApiKey candidate : candidates) {
+               if (passwordEncoder.matches(rawKey, candidate.getKeyHash())) {
+                   // 만료 확인
+                   if (candidate.getExpiresAt() != null &&
+                       candidate.getExpiresAt().isBefore(LocalDateTime.now())) {
+                       throw new ApiKeyExpiredException("API 키가 만료되었습니다");
+                   }
+
+                   // 사용 통계 업데이트
+                   candidate.setLastUsedAt(LocalDateTime.now());
+                   candidate.setUsageCount(candidate.getUsageCount() + 1);
+                   apiKeyRepository.save(candidate);
+
+                   return candidate;
+               }
+           }
+
+           throw new InvalidApiKeyException("유효하지 않은 API 키입니다");
+       }
+   }
+   ```
+
+4. API 키 인증 필터
+   ```java
+   @Component
+   public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
+
+       private final ApiKeyService apiKeyService;
+
+       @Override
+       protected void doFilterInternal(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        FilterChain filterChain) {
+
+           // API 키 추출 (헤더 또는 쿼리 파라미터)
+           String apiKey = extractApiKey(request);
+
+           if (apiKey != null) {
+               try {
+                   ApiKey validatedKey = apiKeyService.validateApiKey(apiKey);
+                   User user = validatedKey.getUser();
+
+                   // SecurityContext에 인증 정보 설정
+                   UsernamePasswordAuthenticationToken auth =
+                       new UsernamePasswordAuthenticationToken(
+                           user, null, user.getAuthorities());
+                   auth.setDetails(new ApiKeyAuthenticationDetails(validatedKey));
+                   SecurityContextHolder.getContext().setAuthentication(auth);
+               } catch (Exception e) {
+                   response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                   return;
+               }
+           }
+
+           filterChain.doFilter(request, response);
+       }
+
+       private String extractApiKey(HttpServletRequest request) {
+           // X-API-Key 헤더
+           String headerKey = request.getHeader("X-API-Key");
+           if (headerKey != null) return headerKey;
+
+           // Authorization: Bearer 헤더
+           String authHeader = request.getHeader("Authorization");
+           if (authHeader != null && authHeader.startsWith("Bearer ak_")) {
+               return authHeader.substring(7);
+           }
+
+           // 쿼리 파라미터 (덜 안전, 비권장)
+           return request.getParameter("api_key");
+       }
+   }
+   ```
+
+5. Security 설정 수정
+   ```java
+   @Configuration
+   public class SecurityConfig {
+
+       @Bean
+       public SecurityFilterChain filterChain(HttpSecurity http) {
+           http
+               // ...기존 설정
+               .addFilterBefore(apiKeyAuthFilter, JwtAuthenticationFilter.class);
+
+           return http.build();
+       }
+   }
+   ```
+
+6. DTO
+   ```java
+   @Data
+   public class ApiKeyRequest {
+       @NotBlank
+       @Size(max = 50)
+       private String name;
+
+       private LocalDateTime expiresAt;  // null이면 무제한
+   }
+
+   @Data
+   public class ApiKeyResponse {
+       private Long id;
+       private String name;
+       private String keyPrefix;  // "ak_xxxxxxxx..."
+       private LocalDateTime lastUsedAt;
+       private Long usageCount;
+       private Boolean isActive;
+       private LocalDateTime expiresAt;
+       private LocalDateTime createdAt;
+   }
+
+   @Data
+   public class ApiKeyCreateResponse extends ApiKeyResponse {
+       private String key;  // 원본 키 (생성 시에만 반환)
+   }
+   ```
+
+7. 프론트엔드 API 키 관리 페이지
+   ```tsx
+   export function ApiKeysPage() {
+     const { data: apiKeys } = useApiKeys();
+     const createApiKey = useCreateApiKey();
+     const [newKeyModal, setNewKeyModal] = useState(false);
+     const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+
+     const handleCreate = async (data: ApiKeyRequest) => {
+       const result = await createApiKey.mutateAsync(data);
+       setGeneratedKey(result.key);  // 생성된 키 표시
+     };
+
+     return (
+       <div className="p-6">
+         <header>
+           <h1>API 키 관리</h1>
+           <Button onClick={() => setNewKeyModal(true)}>+ 새 API 키</Button>
+         </header>
+
+         <table>
+           {apiKeys?.map(key => (
+             <tr key={key.id}>
+               <td>{key.name}</td>
+               <td><code>{key.keyPrefix}...</code></td>
+               <td>{key.lastUsedAt ? formatDate(key.lastUsedAt) : '사용 안함'}</td>
+               <td>{key.usageCount}회</td>
+               <td><DeleteButton keyId={key.id} /></td>
+             </tr>
+           ))}
+         </table>
+
+         {/* 생성된 키 표시 모달 (복사 가능) */}
+         {generatedKey && (
+           <KeyDisplayModal
+             apiKey={generatedKey}
+             onClose={() => setGeneratedKey(null)}
+           />
+         )}
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] API 키 생성 → 원본 키 반환
+- [ ] API 키 목록 조회 (원본 키 미포함)
+- [ ] API 키로 외부 API 호출 인증 성공
+- [ ] 잘못된 API 키 → 401 응답
+- [ ] 만료된 API 키 → 401 응답
+- [ ] API 키 삭제 후 사용 불가
+- [ ] 사용 통계 업데이트 확인
+
+[참고 자료]
+- API Key Best Practices: https://cloud.google.com/docs/authentication/api-keys

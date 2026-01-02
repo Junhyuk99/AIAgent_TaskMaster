@@ -1,0 +1,200 @@
+================================================================================
+TASK #010: 에이전트 관리 UI 구현
+================================================================================
+
+[기본 정보]
+- ID: 10
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #6 (인증 UI), Task #9 (에이전트 CRUD API)
+
+[설명]
+대시보드 에이전트 목록, 에이전트 생성/편집 폼 UI 구현
+
+[상세 구현 가이드]
+1. 페이지 및 컴포넌트 구조
+   ```
+   src/pages/
+   ├── DashboardPage.tsx
+   └── agents/
+       ├── AgentListPage.tsx
+       └── AgentEditPage.tsx
+
+   src/components/agents/
+   ├── AgentCard.tsx
+   ├── AgentList.tsx
+   ├── AgentForm.tsx
+   ├── CreateAgentModal.tsx
+   └── tabs/
+       ├── BasicSettingsTab.tsx
+       ├── FunctionsTab.tsx
+       ├── KnowledgeTab.tsx
+       ├── TestTab.tsx
+       └── DeployTab.tsx
+   ```
+
+2. 대시보드 페이지 (/dashboard)
+   ```tsx
+   export function DashboardPage() {
+     const { data: agents, isLoading } = useAgents();
+     const { data: stats } = useDashboardStats();
+
+     return (
+       <div className="p-6">
+         {/* 요약 카드 */}
+         <div className="grid grid-cols-4 gap-4 mb-6">
+           <StatCard title="총 에이전트" value={stats.totalAgents} />
+           <StatCard title="활성 에이전트" value={stats.activeAgents} />
+           <StatCard title="오늘 대화" value={stats.todayChats} />
+           <StatCard title="LLM 서버" value={stats.llmServers} />
+         </div>
+
+         {/* 에이전트 목록 */}
+         <div className="flex justify-between items-center mb-4">
+           <h2>내 에이전트</h2>
+           <Button onClick={openCreateModal}>+ 새 에이전트</Button>
+         </div>
+
+         <AgentGrid agents={agents} isLoading={isLoading} />
+       </div>
+     );
+   }
+   ```
+
+3. AgentCard 컴포넌트
+   ```tsx
+   export function AgentCard({ agent }: { agent: Agent }) {
+     return (
+       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+         <div className="flex justify-between">
+           <h3 className="font-semibold">{agent.name}</h3>
+           <DropdownMenu>
+             <DropdownItem onClick={() => navigate(`/agents/${agent.id}/edit`)}>
+               편집
+             </DropdownItem>
+             <DropdownItem onClick={() => duplicateAgent(agent.id)}>
+               복제
+             </DropdownItem>
+             <DropdownItem onClick={() => deleteAgent(agent.id)} variant="danger">
+               삭제
+             </DropdownItem>
+           </DropdownMenu>
+         </div>
+         <p className="text-sm text-gray-500 mt-2">{agent.description}</p>
+         <div className="flex gap-2 mt-3 text-xs">
+           <Badge>{agent.modelName}</Badge>
+           <Badge variant="outline">{agent.functions.length} 함수</Badge>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+4. 에이전트 편집 페이지 (/agents/:id/edit)
+   ```tsx
+   export function AgentEditPage() {
+     const { id } = useParams();
+     const { data: agent, isLoading } = useAgent(id);
+     const [activeTab, setActiveTab] = useState('basic');
+
+     const tabs = [
+       { id: 'basic', label: '기본 설정', component: BasicSettingsTab },
+       { id: 'functions', label: '함수 연결', component: FunctionsTab },
+       { id: 'knowledge', label: '지식 연결', component: KnowledgeTab },
+       { id: 'test', label: '테스트', component: TestTab },
+       { id: 'deploy', label: '배포', component: DeployTab },
+     ];
+
+     return (
+       <div className="p-6">
+         <header className="mb-6">
+           <h1>{agent.name}</h1>
+         </header>
+
+         <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+
+         <div className="mt-6">
+           <ActiveTabComponent agent={agent} />
+         </div>
+       </div>
+     );
+   }
+   ```
+
+5. 기본 설정 탭 (BasicSettingsTab)
+   ```tsx
+   export function BasicSettingsTab({ agent }: Props) {
+     const { data: llmServers } = useLlmServers();
+     const { data: models } = useModels(selectedServerId);
+     const updateAgent = useUpdateAgent();
+
+     return (
+       <form onSubmit={handleSubmit(onSubmit)}>
+         <Input label="에이전트 이름" {...register('name')} />
+         <Textarea label="설명" {...register('description')} />
+         <Textarea label="시스템 프롬프트" rows={6} {...register('systemPrompt')} />
+
+         <Select label="LLM 서버" {...register('llmServerId')}>
+           {llmServers.map(server => (
+             <option key={server.id} value={server.id}>{server.name}</option>
+           ))}
+         </Select>
+
+         <Select label="모델" {...register('modelName')}>
+           {models.map(model => (
+             <option key={model.name} value={model.name}>{model.name}</option>
+           ))}
+         </Select>
+
+         <Slider
+           label="Temperature"
+           min={0} max={2} step={0.1}
+           {...register('temperature')}
+         />
+
+         <Input
+           label="Max Tokens"
+           type="number"
+           {...register('maxTokens')}
+         />
+
+         <Button type="submit">저장</Button>
+       </form>
+     );
+   }
+   ```
+
+6. React Query 훅
+   ```tsx
+   // hooks/useAgents.ts
+   export function useAgents() {
+     return useQuery({
+       queryKey: ['agents'],
+       queryFn: () => agentService.getAgents(),
+     });
+   }
+
+   export function useUpdateAgent() {
+     const queryClient = useQueryClient();
+     return useMutation({
+       mutationFn: ({ id, data }) => agentService.updateAgent(id, data),
+       onSuccess: () => {
+         queryClient.invalidateQueries({ queryKey: ['agents'] });
+       },
+     });
+   }
+   ```
+
+[테스트 기준]
+- [ ] 대시보드에서 에이전트 카드 목록 표시
+- [ ] 새 에이전트 생성 모달 동작
+- [ ] 에이전트 편집 페이지 탭 전환
+- [ ] 기본 설정 폼 저장 및 반영
+- [ ] LLM 서버 선택 시 모델 목록 갱신
+- [ ] 에이전트 삭제 확인 다이얼로그
+- [ ] 에이전트 복제 동작
+
+[참고 자료]
+- React Query: https://tanstack.com/query/latest
+- Headless UI: https://headlessui.com/

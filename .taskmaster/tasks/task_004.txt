@@ -1,0 +1,125 @@
+================================================================================
+TASK #004: JWT 기반 인증 시스템 구현 (백엔드)
+================================================================================
+
+[기본 정보]
+- ID: 4
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #3 (PostgreSQL 데이터베이스 설정 및 JPA Entity 생성)
+
+[설명]
+Spring Security + JWT를 이용한 회원가입, 로그인, 토큰 갱신 API 구현
+
+[상세 구현 가이드]
+1. 의존성 추가
+   ```gradle
+   implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+   runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+   runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+   ```
+
+2. JWT 설정 (application.yml)
+   ```yaml
+   jwt:
+     secret: ${JWT_SECRET:your-256-bit-secret-key-here}
+     access-token-expiration: 3600000  # 1시간
+     refresh-token-expiration: 604800000  # 7일
+   ```
+
+3. JwtTokenProvider 구현
+   ```java
+   @Component
+   public class JwtTokenProvider {
+       // 토큰 생성
+       public String createAccessToken(String email);
+       public String createRefreshToken(String email);
+
+       // 토큰 검증
+       public boolean validateToken(String token);
+
+       // 토큰에서 정보 추출
+       public String getEmailFromToken(String token);
+   }
+   ```
+
+4. Spring Security 설정
+   ```java
+   @Configuration
+   @EnableWebSecurity
+   public class SecurityConfig {
+       @Bean
+       public SecurityFilterChain filterChain(HttpSecurity http) {
+           http
+               .csrf(csrf -> csrf.disable())
+               .sessionManagement(session ->
+                   session.sessionCreationPolicy(STATELESS))
+               .authorizeHttpRequests(auth -> auth
+                   .requestMatchers("/api/auth/**").permitAll()
+                   .requestMatchers("/api/v1/**").permitAll()  // 외부 API
+                   .anyRequest().authenticated())
+               .addFilterBefore(jwtAuthFilter,
+                   UsernamePasswordAuthenticationFilter.class);
+           return http.build();
+       }
+   }
+   ```
+
+5. JwtAuthenticationFilter 구현
+   - Authorization 헤더에서 Bearer 토큰 추출
+   - 토큰 검증 및 SecurityContext에 인증 정보 설정
+
+6. UserDetailsService 구현
+   ```java
+   @Service
+   public class CustomUserDetailsService implements UserDetailsService {
+       @Override
+       public UserDetails loadUserByUsername(String email);
+   }
+   ```
+
+7. AuthController API 구현
+   ```
+   POST /api/auth/register
+   - 요청: { email, password, name }
+   - 응답: { id, email, name }
+
+   POST /api/auth/login
+   - 요청: { email, password }
+   - 응답: { accessToken, refreshToken, user }
+
+   POST /api/auth/refresh
+   - 요청: { refreshToken }
+   - 응답: { accessToken, refreshToken }
+
+   GET /api/auth/me
+   - 헤더: Authorization: Bearer {token}
+   - 응답: { id, email, name }
+   ```
+
+8. 비밀번호 암호화 (BCrypt)
+   ```java
+   @Bean
+   public PasswordEncoder passwordEncoder() {
+       return new BCryptPasswordEncoder();
+   }
+   ```
+
+9. 예외 처리
+   - InvalidTokenException
+   - ExpiredTokenException
+   - AuthenticationFailedException
+
+[테스트 기준]
+- [ ] 회원가입 → 로그인 → accessToken 발급 확인
+- [ ] accessToken으로 /api/auth/me 호출 성공
+- [ ] 잘못된 토큰으로 요청 시 401 응답
+- [ ] 만료된 토큰으로 요청 시 401 응답
+- [ ] refreshToken으로 새 accessToken 발급 확인
+- [ ] 비밀번호 BCrypt 해싱 확인
+
+[참고 자료]
+- Spring Security: https://docs.spring.io/spring-security/reference/
+- JWT: https://jwt.io/
+- JJWT Library: https://github.com/jwtk/jjwt

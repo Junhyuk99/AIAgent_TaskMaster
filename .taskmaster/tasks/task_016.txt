@@ -1,0 +1,212 @@
+================================================================================
+TASK #016: Function Calling 연동
+================================================================================
+
+[기본 정보]
+- ID: 16
+- 우선순위: high
+- 복잡도: 7/10
+- 상태: pending
+- 의존성: Task #8 (Ollama 연동), Task #13 (함수 관리 API), Task #15 (HTTP API 방식 함수)
+
+[설명]
+LLM의 Function Calling 기능과 사용자 정의 함수 연동
+
+[상세 구현 가이드]
+1. 핵심 흐름
+   ```
+   사용자 메시지 → LLM (with tools) → function_call 응답 → 함수 실행 → 결과를 LLM에 전달 → 최종 응답
+   ```
+
+2. 함수 스키마 변환 서비스
+   ```java
+   @Service
+   public class FunctionSchemaService {
+
+       public List<JsonNode> getToolsSchema(Agent agent) {
+           return agent.getFunctions().stream()
+               .map(this::convertToToolSchema)
+               .collect(Collectors.toList());
+       }
+
+       private JsonNode convertToToolSchema(Function function) {
+           ObjectNode tool = objectMapper.createObjectNode();
+           tool.put("type", "function");
+
+           ObjectNode functionNode = tool.putObject("function");
+           functionNode.put("name", function.getName());
+           functionNode.put("description", function.getDescription());
+
+           ObjectNode parameters = functionNode.putObject("parameters");
+           parameters.put("type", "object");
+
+           ObjectNode properties = parameters.putObject("properties");
+           ArrayNode required = parameters.putArray("required");
+
+           for (ParameterDefinition param : function.getParameters()) {
+               ObjectNode prop = properties.putObject(param.getName());
+               prop.put("type", param.getType().getJsonType());
+               if (param.getDescription() != null) {
+                   prop.put("description", param.getDescription());
+               }
+               if (param.getEnumValues() != null) {
+                   prop.set("enum", param.getEnumValues());
+               }
+               if (param.isRequired()) {
+                   required.add(param.getName());
+               }
+           }
+
+           return tool;
+       }
+   }
+   ```
+
+3. ChatService 수정 (Function Calling 포함)
+   ```java
+   public ChatMessageResponse chatWithFunctions(Long agentId, ChatMessageRequest request, Long userId) {
+       Agent agent = getAgentWithFunctions(agentId, userId);
+       List<JsonNode> tools = functionSchemaService.getToolsSchema(agent);
+
+       List<Message> messages = buildMessages(agent, request);
+
+       // 최대 반복 횟수 (무한 루프 방지)
+       int maxIterations = 5;
+       int iteration = 0;
+
+       while (iteration < maxIterations) {
+           ChatRequest llmRequest = ChatRequest.builder()
+               .model(agent.getModelName())
+               .messages(messages)
+               .tools(tools.isEmpty() ? null : tools)
+               .temperature(agent.getTemperature())
+               .build();
+
+           ChatResponse response = connector.chat(llmRequest);
+
+           // Function call 확인
+           if (response.getToolCalls() != null && !response.getToolCalls().isEmpty()) {
+               // 어시스턴트 메시지 추가 (tool_calls 포함)
+               messages.add(Message.assistant(response.getContent(), response.getToolCalls()));
+
+               // 각 함수 실행
+               for (ToolCall toolCall : response.getToolCalls()) {
+                   Object result = executeFunctionCall(agent, toolCall);
+
+                   // 함수 결과를 메시지에 추가
+                   messages.add(Message.tool(toolCall.getId(), result.toString()));
+               }
+
+               iteration++;
+           } else {
+               // 함수 호출 없음 - 최종 응답
+               return ChatMessageResponse.builder()
+                   .content(response.getContent())
+                   .functionCalls(collectFunctionCalls(messages))
+                   .build();
+           }
+       }
+
+       throw new MaxIterationsExceededException("함수 호출 최대 횟수 초과");
+   }
+   ```
+
+4. 함수 실행 로직
+   ```java
+   private Object executeFunctionCall(Agent agent, ToolCall toolCall) {
+       String functionName = toolCall.getFunction().getName();
+       Map<String, Object> arguments = parseArguments(toolCall.getFunction().getArguments());
+
+       // 에이전트에 연결된 함수 중 매칭되는 것 찾기
+       Function function = agent.getFunctions().stream()
+           .filter(f -> f.getName().equals(functionName))
+           .findFirst()
+           .orElseThrow(() -> new FunctionNotFoundException(functionName));
+
+       // 함수 실행
+       FunctionExecutor executor = executorFactory.getExecutor(function.getImplementationType());
+       Object result = executor.execute(function, arguments);
+
+       // 실행 로그 저장
+       saveFunctionExecutionLog(function, arguments, result);
+
+       return result;
+   }
+   ```
+
+5. Ollama Function Calling 요청 형식
+   ```java
+   // OllamaChatRequest에 tools 추가
+   @Data
+   public class OllamaChatRequest {
+       private String model;
+       private List<OllamaMessage> messages;
+       private boolean stream;
+       private List<JsonNode> tools;  // Function calling용
+       private OllamaOptions options;
+   }
+   ```
+
+6. Ollama Function Calling 응답 파싱
+   ```java
+   @Data
+   public class OllamaChatResponse {
+       private OllamaMessage message;
+       private String model;
+       // ...
+   }
+
+   @Data
+   public class OllamaMessage {
+       private String role;
+       private String content;
+       private List<OllamaToolCall> toolCalls;  // 함수 호출 시
+   }
+
+   @Data
+   public class OllamaToolCall {
+       private String id;
+       private String type;  // "function"
+       private OllamaFunctionCall function;
+   }
+   ```
+
+7. 함수 실행 로그 엔티티
+   ```java
+   @Entity
+   public class FunctionCallLog {
+       @Id @GeneratedValue
+       private Long id;
+       private Long agentId;
+       private Long functionId;
+       private String functionName;
+       private String arguments;  // JSON
+       private String result;     // JSON
+       private Long executionTime;  // ms
+       private Boolean success;
+       private String errorMessage;
+       private LocalDateTime createdAt;
+   }
+   ```
+
+8. 스트리밍과 Function Calling
+   ```java
+   public Flux<ChatStreamEvent> chatStreamWithFunctions(Long agentId, ChatMessageRequest request, Long userId) {
+       // 참고: Ollama의 스트리밍 + function calling은 복잡
+       // 일반적으로 function call이 필요한 경우 non-streaming으로 처리 후
+       // 최종 응답만 스트리밍하는 방식 권장
+   }
+   ```
+
+[테스트 기준]
+- [ ] 함수 없는 에이전트 채팅 → 일반 응답
+- [ ] 함수 있는 에이전트 채팅 → 함수 호출 유도 메시지 시 함수 실행
+- [ ] 함수 실행 결과가 최종 응답에 반영
+- [ ] 여러 함수 순차 호출 처리
+- [ ] 함수 실행 로그 저장 확인
+- [ ] 최대 반복 횟수 초과 시 에러 처리
+- [ ] 잘못된 함수명 호출 시 에러 처리
+
+[참고 자료]
+- Ollama Tool Use: https://ollama.ai/blog/tool-support
+- OpenAI Function Calling: https://platform.openai.com/docs/guides/function-calling

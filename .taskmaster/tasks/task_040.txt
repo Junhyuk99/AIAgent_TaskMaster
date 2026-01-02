@@ -1,0 +1,386 @@
+================================================================================
+TASK #040: 테스트 코드 작성 및 CI 설정
+================================================================================
+
+[기본 정보]
+- ID: 40
+- 우선순위: medium
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #12 (채팅 기능), Task #16 (Function Calling), Task #23 (RAG)
+
+[설명]
+백엔드/프론트엔드 테스트 코드 작성, GitHub Actions CI 파이프라인 구성
+
+[상세 구현 가이드]
+1. 백엔드 테스트 의존성
+   ```gradle
+   testImplementation 'org.springframework.boot:spring-boot-starter-test'
+   testImplementation 'org.springframework.security:spring-security-test'
+   testImplementation 'org.testcontainers:postgresql:1.19.3'
+   testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
+   testImplementation 'com.h2database:h2'
+   ```
+
+2. 단위 테스트 (Service Layer)
+   ```java
+   @ExtendWith(MockitoExtension.class)
+   class AgentServiceTest {
+
+       @Mock
+       private AgentRepository agentRepository;
+
+       @Mock
+       private LlmServerRepository llmServerRepository;
+
+       @InjectMocks
+       private AgentService agentService;
+
+       @Test
+       void createAgent_ShouldReturnCreatedAgent() {
+           // Given
+           AgentRequest request = AgentRequest.builder()
+               .name("Test Agent")
+               .systemPrompt("You are a helpful assistant")
+               .llmServerId(1L)
+               .modelName("llama2")
+               .build();
+
+           LlmServer llmServer = LlmServer.builder().id(1L).name("Local Ollama").build();
+           when(llmServerRepository.findById(1L)).thenReturn(Optional.of(llmServer));
+           when(agentRepository.save(any(Agent.class))).thenAnswer(i -> {
+               Agent agent = i.getArgument(0);
+               agent.setId(1L);
+               return agent;
+           });
+
+           // When
+           AgentResponse response = agentService.createAgent(request, 1L);
+
+           // Then
+           assertThat(response.getName()).isEqualTo("Test Agent");
+           verify(agentRepository).save(any(Agent.class));
+       }
+
+       @Test
+       void getAgent_ShouldThrowNotFoundException_WhenNotExists() {
+           // Given
+           when(agentRepository.findByIdAndUserId(999L, 1L)).thenReturn(Optional.empty());
+
+           // When & Then
+           assertThrows(NotFoundException.class, () ->
+               agentService.getAgent(999L, 1L));
+       }
+   }
+   ```
+
+3. 통합 테스트 (TestContainers)
+   ```java
+   @SpringBootTest
+   @Testcontainers
+   @AutoConfigureMockMvc
+   class AgentControllerIntegrationTest {
+
+       @Container
+       static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+           .withDatabaseName("testdb")
+           .withUsername("test")
+           .withPassword("test");
+
+       @DynamicPropertySource
+       static void configureProperties(DynamicPropertyRegistry registry) {
+           registry.add("spring.datasource.url", postgres::getJdbcUrl);
+           registry.add("spring.datasource.username", postgres::getUsername);
+           registry.add("spring.datasource.password", postgres::getPassword);
+       }
+
+       @Autowired
+       private MockMvc mockMvc;
+
+       @Autowired
+       private ObjectMapper objectMapper;
+
+       @Test
+       @WithMockUser(username = "test@example.com")
+       void createAgent_ShouldReturn201() throws Exception {
+           AgentRequest request = AgentRequest.builder()
+               .name("Integration Test Agent")
+               .systemPrompt("Test prompt")
+               .llmServerId(1L)
+               .modelName("llama2")
+               .build();
+
+           mockMvc.perform(post("/api/agents")
+                   .contentType(MediaType.APPLICATION_JSON)
+                   .content(objectMapper.writeValueAsString(request)))
+               .andExpect(status().isCreated())
+               .andExpect(jsonPath("$.name").value("Integration Test Agent"));
+       }
+   }
+   ```
+
+4. 프론트엔드 테스트 설정
+   ```typescript
+   // vitest.config.ts
+   import { defineConfig } from 'vitest/config';
+   import react from '@vitejs/plugin-react';
+
+   export default defineConfig({
+     plugins: [react()],
+     test: {
+       globals: true,
+       environment: 'jsdom',
+       setupFiles: './src/test/setup.ts',
+       coverage: {
+         reporter: ['text', 'json', 'html'],
+       },
+     },
+   });
+   ```
+
+5. 프론트엔드 단위 테스트
+   ```typescript
+   // src/components/agents/AgentCard.test.tsx
+   import { render, screen, fireEvent } from '@testing-library/react';
+   import { AgentCard } from './AgentCard';
+   import { vi } from 'vitest';
+
+   const mockAgent = {
+     id: 1,
+     name: 'Test Agent',
+     description: 'A test agent',
+     modelName: 'llama2',
+     functions: [],
+     knowledgeBases: [],
+   };
+
+   describe('AgentCard', () => {
+     it('renders agent name and description', () => {
+       render(<AgentCard agent={mockAgent} />);
+
+       expect(screen.getByText('Test Agent')).toBeInTheDocument();
+       expect(screen.getByText('A test agent')).toBeInTheDocument();
+     });
+
+     it('calls onEdit when edit button is clicked', () => {
+       const onEdit = vi.fn();
+       render(<AgentCard agent={mockAgent} onEdit={onEdit} />);
+
+       fireEvent.click(screen.getByText('편집'));
+       expect(onEdit).toHaveBeenCalledWith(mockAgent);
+     });
+   });
+   ```
+
+6. 컴포넌트 테스트 (React Testing Library)
+   ```typescript
+   // src/pages/LoginPage.test.tsx
+   import { render, screen, waitFor } from '@testing-library/react';
+   import userEvent from '@testing-library/user-event';
+   import { LoginPage } from './LoginPage';
+   import { AuthProvider } from '../contexts/AuthContext';
+   import { BrowserRouter } from 'react-router-dom';
+
+   const renderLoginPage = () => {
+     return render(
+       <BrowserRouter>
+         <AuthProvider>
+           <LoginPage />
+         </AuthProvider>
+       </BrowserRouter>
+     );
+   };
+
+   describe('LoginPage', () => {
+     it('shows validation errors for empty fields', async () => {
+       renderLoginPage();
+
+       await userEvent.click(screen.getByRole('button', { name: /로그인/i }));
+
+       await waitFor(() => {
+         expect(screen.getByText(/이메일을 입력하세요/i)).toBeInTheDocument();
+         expect(screen.getByText(/비밀번호를 입력하세요/i)).toBeInTheDocument();
+       });
+     });
+
+     it('submits form with valid credentials', async () => {
+       renderLoginPage();
+
+       await userEvent.type(screen.getByLabelText(/이메일/i), 'test@example.com');
+       await userEvent.type(screen.getByLabelText(/비밀번호/i), 'password123');
+       await userEvent.click(screen.getByRole('button', { name: /로그인/i }));
+
+       // API 호출 확인 (MSW 또는 Mock 사용)
+     });
+   });
+   ```
+
+7. E2E 테스트 (Playwright)
+   ```typescript
+   // e2e/auth.spec.ts
+   import { test, expect } from '@playwright/test';
+
+   test.describe('Authentication', () => {
+     test('user can register and login', async ({ page }) => {
+       // 회원가입
+       await page.goto('/register');
+       await page.fill('[name="name"]', 'Test User');
+       await page.fill('[name="email"]', `test${Date.now()}@example.com`);
+       await page.fill('[name="password"]', 'password123');
+       await page.fill('[name="confirmPassword"]', 'password123');
+       await page.click('button[type="submit"]');
+
+       // 로그인 페이지로 리다이렉트 확인
+       await expect(page).toHaveURL('/login');
+
+       // 로그인
+       await page.fill('[name="email"]', 'test@example.com');
+       await page.fill('[name="password"]', 'password123');
+       await page.click('button[type="submit"]');
+
+       // 대시보드 접근 확인
+       await expect(page).toHaveURL('/dashboard');
+     });
+   });
+
+   // e2e/agent.spec.ts
+   test.describe('Agent Management', () => {
+     test.beforeEach(async ({ page }) => {
+       // 로그인 상태로 시작
+       await page.goto('/login');
+       await page.fill('[name="email"]', 'test@example.com');
+       await page.fill('[name="password"]', 'password123');
+       await page.click('button[type="submit"]');
+       await page.waitForURL('/dashboard');
+     });
+
+     test('user can create an agent', async ({ page }) => {
+       await page.click('text=새 에이전트');
+       await page.fill('[name="name"]', 'E2E Test Agent');
+       await page.fill('[name="systemPrompt"]', 'You are helpful.');
+       await page.click('button[type="submit"]');
+
+       await expect(page.locator('text=E2E Test Agent')).toBeVisible();
+     });
+   });
+   ```
+
+8. GitHub Actions CI
+   ```yaml
+   # .github/workflows/ci.yml
+   name: CI
+
+   on:
+     push:
+       branches: [main, develop]
+     pull_request:
+       branches: [main, develop]
+
+   jobs:
+     backend-test:
+       runs-on: ubuntu-latest
+
+       services:
+         postgres:
+           image: postgres:15
+           env:
+             POSTGRES_USER: test
+             POSTGRES_PASSWORD: test
+             POSTGRES_DB: testdb
+           ports:
+             - 5432:5432
+           options: >-
+             --health-cmd pg_isready
+             --health-interval 10s
+             --health-timeout 5s
+             --health-retries 5
+
+       steps:
+         - uses: actions/checkout@v4
+
+         - name: Set up JDK 17
+           uses: actions/setup-java@v4
+           with:
+             java-version: '17'
+             distribution: 'temurin'
+
+         - name: Cache Gradle packages
+           uses: actions/cache@v3
+           with:
+             path: ~/.gradle/caches
+             key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+
+         - name: Run tests
+           run: ./gradlew test
+           env:
+             SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+             SPRING_DATASOURCE_USERNAME: test
+             SPRING_DATASOURCE_PASSWORD: test
+
+         - name: Upload coverage
+           uses: codecov/codecov-action@v3
+
+     frontend-test:
+       runs-on: ubuntu-latest
+
+       steps:
+         - uses: actions/checkout@v4
+
+         - name: Setup Node.js
+           uses: actions/setup-node@v4
+           with:
+             node-version: '20'
+             cache: 'npm'
+             cache-dependency-path: frontend/package-lock.json
+
+         - name: Install dependencies
+           run: npm ci
+           working-directory: frontend
+
+         - name: Run linter
+           run: npm run lint
+           working-directory: frontend
+
+         - name: Run tests
+           run: npm run test -- --coverage
+           working-directory: frontend
+
+         - name: Build
+           run: npm run build
+           working-directory: frontend
+
+     e2e-test:
+       runs-on: ubuntu-latest
+       needs: [backend-test, frontend-test]
+
+       steps:
+         - uses: actions/checkout@v4
+
+         - name: Setup Node.js
+           uses: actions/setup-node@v4
+           with:
+             node-version: '20'
+
+         - name: Install Playwright
+           run: npx playwright install --with-deps
+
+         - name: Run E2E tests
+           run: npx playwright test
+           working-directory: frontend
+   ```
+
+[테스트 기준]
+- [ ] 백엔드 단위 테스트 통과
+- [ ] 백엔드 통합 테스트 통과
+- [ ] 프론트엔드 단위 테스트 통과
+- [ ] E2E 테스트 통과
+- [ ] GitHub Actions CI 파이프라인 동작
+- [ ] PR 시 자동 테스트 실행
+- [ ] 테스트 커버리지 리포트 생성
+
+[참고 자료]
+- JUnit 5: https://junit.org/junit5/docs/current/user-guide/
+- TestContainers: https://www.testcontainers.org/
+- Vitest: https://vitest.dev/
+- Playwright: https://playwright.dev/
+- GitHub Actions: https://docs.github.com/en/actions

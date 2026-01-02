@@ -1,0 +1,149 @@
+================================================================================
+TASK #006: 인증 UI 구현 (로그인/회원가입)
+================================================================================
+
+[기본 정보]
+- ID: 6
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템), Task #5 (기본 UI 레이아웃)
+
+[설명]
+로그인, 회원가입 폼 컴포넌트, JWT 토큰 관리, 인증 상태 관리 (Zustand)
+
+[상세 구현 가이드]
+1. 인증 관련 페이지 구조
+   ```
+   src/pages/auth/
+   ├── LoginPage.tsx
+   ├── RegisterPage.tsx
+   └── ForgotPasswordPage.tsx (옵션)
+   ```
+
+2. 인증 상태 관리 (Zustand)
+   ```typescript
+   // stores/authStore.ts
+   interface AuthState {
+     user: User | null;
+     accessToken: string | null;
+     refreshToken: string | null;
+     isAuthenticated: boolean;
+     isLoading: boolean;
+
+     login: (email: string, password: string) => Promise<void>;
+     register: (data: RegisterData) => Promise<void>;
+     logout: () => void;
+     refreshTokens: () => Promise<void>;
+   }
+   ```
+
+3. 로그인 페이지
+   ```tsx
+   // 폼 스키마 (Zod)
+   const loginSchema = z.object({
+     email: z.string().email('유효한 이메일을 입력하세요'),
+     password: z.string().min(6, '비밀번호는 6자 이상이어야 합니다'),
+   });
+
+   // react-hook-form 사용
+   const { register, handleSubmit, formState: { errors } } =
+     useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
+   ```
+
+4. 회원가입 페이지
+   ```tsx
+   const registerSchema = z.object({
+     name: z.string().min(2, '이름은 2자 이상이어야 합니다'),
+     email: z.string().email('유효한 이메일을 입력하세요'),
+     password: z.string().min(6, '비밀번호는 6자 이상이어야 합니다'),
+     confirmPassword: z.string(),
+   }).refine(data => data.password === data.confirmPassword, {
+     message: '비밀번호가 일치하지 않습니다',
+     path: ['confirmPassword'],
+   });
+   ```
+
+5. Axios 인터셉터 설정
+   ```typescript
+   // services/api.ts
+   const api = axios.create({ baseURL: '/api' });
+
+   // 요청 인터셉터: 토큰 추가
+   api.interceptors.request.use((config) => {
+     const token = useAuthStore.getState().accessToken;
+     if (token) {
+       config.headers.Authorization = `Bearer ${token}`;
+     }
+     return config;
+   });
+
+   // 응답 인터셉터: 토큰 갱신
+   api.interceptors.response.use(
+     (response) => response,
+     async (error) => {
+       if (error.response?.status === 401) {
+         // 토큰 갱신 시도
+         await useAuthStore.getState().refreshTokens();
+         // 원래 요청 재시도
+       }
+       return Promise.reject(error);
+     }
+   );
+   ```
+
+6. 토큰 영속화
+   ```typescript
+   // localStorage에 저장
+   localStorage.setItem('accessToken', token);
+   localStorage.setItem('refreshToken', refreshToken);
+
+   // 앱 시작 시 복원
+   useEffect(() => {
+     const token = localStorage.getItem('accessToken');
+     if (token) {
+       // 토큰 유효성 검증 및 사용자 정보 조회
+     }
+   }, []);
+   ```
+
+7. useAuth 커스텀 훅
+   ```typescript
+   export function useAuth() {
+     const { user, isAuthenticated, login, logout, isLoading } =
+       useAuthStore();
+
+     return { user, isAuthenticated, login, logout, isLoading };
+   }
+   ```
+
+8. Protected Route 컴포넌트
+   ```tsx
+   function ProtectedRoute({ children }: Props) {
+     const { isAuthenticated, isLoading } = useAuth();
+     const location = useLocation();
+
+     if (isLoading) return <LoadingSpinner />;
+
+     if (!isAuthenticated) {
+       return <Navigate to="/login" state={{ from: location }} />;
+     }
+
+     return <>{children}</>;
+   }
+   ```
+
+[테스트 기준]
+- [ ] 회원가입 폼 유효성 검증 동작
+- [ ] 회원가입 성공 → 로그인 페이지 이동
+- [ ] 로그인 성공 → 대시보드 이동
+- [ ] 잘못된 자격 증명 → 에러 메시지 표시
+- [ ] 로그아웃 → 로그인 페이지 이동, 토큰 삭제
+- [ ] 비인증 상태에서 보호된 페이지 접근 → 로그인 리다이렉트
+- [ ] 페이지 새로고침 후 인증 상태 유지
+- [ ] 토큰 만료 시 자동 갱신
+
+[참고 자료]
+- react-hook-form: https://react-hook-form.com/
+- Zod: https://zod.dev/
+- Zustand Persist: https://docs.pmnd.rs/zustand/integrations/persisting-store-data

@@ -1,0 +1,303 @@
+================================================================================
+TASK #036: 에이전트 버전 관리 구현
+================================================================================
+
+[기본 정보]
+- ID: 36
+- 우선순위: low
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #9 (에이전트 CRUD API)
+
+[설명]
+에이전트 설정 버전 히스토리 관리, 롤백 기능
+
+[상세 구현 가이드]
+1. AgentVersion 엔티티
+   ```java
+   @Entity
+   public class AgentVersion {
+       @Id @GeneratedValue
+       private Long id;
+
+       @ManyToOne
+       private Agent agent;
+
+       private Integer versionNumber;
+
+       private String name;
+       private String description;
+
+       @Column(columnDefinition = "TEXT")
+       private String systemPrompt;
+
+       private Long llmServerId;
+       private String modelName;
+       private Double temperature;
+       private Integer maxTokens;
+
+       @Column(columnDefinition = "JSON")
+       private String functionsSnapshot;  // 연결된 함수 ID 목록
+
+       @Column(columnDefinition = "JSON")
+       private String knowledgeBasesSnapshot;  // 연결된 지식베이스 ID 목록
+
+       private String changeDescription;  // 변경 사항 설명
+       private String changedBy;  // 변경한 사용자
+
+       private LocalDateTime createdAt;
+   }
+   ```
+
+2. AgentVersionController API
+   ```java
+   @RestController
+   @RequestMapping("/api/agents/{agentId}/versions")
+   public class AgentVersionController {
+
+       @GetMapping
+       public List<AgentVersionSummary> getVersions(@PathVariable Long agentId);
+
+       @GetMapping("/{versionId}")
+       public AgentVersionResponse getVersion(@PathVariable Long agentId,
+                                               @PathVariable Long versionId);
+
+       @GetMapping("/{versionId}/diff")
+       public AgentVersionDiff getDiff(@PathVariable Long agentId,
+                                        @PathVariable Long versionId,
+                                        @RequestParam(required = false) Long compareWith);
+
+       @PostMapping("/{versionId}/restore")
+       public AgentResponse restoreVersion(@PathVariable Long agentId,
+                                            @PathVariable Long versionId);
+   }
+   ```
+
+3. AgentVersionService 구현
+   ```java
+   @Service
+   public class AgentVersionService {
+
+       /**
+        * 에이전트 수정 시 버전 자동 생성
+        */
+       @Transactional
+       public void createVersion(Agent agent, String changeDescription, String changedBy) {
+           // 마지막 버전 번호 조회
+           Integer lastVersion = versionRepository.findMaxVersionByAgentId(agent.getId())
+               .orElse(0);
+
+           AgentVersion version = AgentVersion.builder()
+               .agent(agent)
+               .versionNumber(lastVersion + 1)
+               .name(agent.getName())
+               .description(agent.getDescription())
+               .systemPrompt(agent.getSystemPrompt())
+               .llmServerId(agent.getLlmServer().getId())
+               .modelName(agent.getModelName())
+               .temperature(agent.getTemperature())
+               .maxTokens(agent.getMaxTokens())
+               .functionsSnapshot(toJson(agent.getFunctions().stream()
+                   .map(Function::getId).toList()))
+               .knowledgeBasesSnapshot(toJson(agent.getKnowledgeBases().stream()
+                   .map(KnowledgeBase::getId).toList()))
+               .changeDescription(changeDescription)
+               .changedBy(changedBy)
+               .createdAt(LocalDateTime.now())
+               .build();
+
+           versionRepository.save(version);
+       }
+
+       /**
+        * 버전 복원
+        */
+       @Transactional
+       public Agent restoreVersion(Long agentId, Long versionId, Long userId) {
+           Agent agent = agentService.getAgentWithOwnerCheck(agentId, userId);
+           AgentVersion version = versionRepository.findById(versionId)
+               .orElseThrow(() -> new NotFoundException("버전을 찾을 수 없습니다"));
+
+           // 현재 상태 저장 (롤백 전)
+           createVersion(agent, "롤백 전 자동 저장", userId.toString());
+
+           // 버전 복원
+           agent.setName(version.getName());
+           agent.setDescription(version.getDescription());
+           agent.setSystemPrompt(version.getSystemPrompt());
+           agent.setLlmServer(llmServerRepository.findById(version.getLlmServerId()).orElseThrow());
+           agent.setModelName(version.getModelName());
+           agent.setTemperature(version.getTemperature());
+           agent.setMaxTokens(version.getMaxTokens());
+
+           // 함수 연결 복원
+           List<Long> functionIds = fromJson(version.getFunctionsSnapshot(), new TypeReference<>() {});
+           agent.setFunctions(new HashSet<>(functionRepository.findAllById(functionIds)));
+
+           // 지식베이스 연결 복원
+           List<Long> kbIds = fromJson(version.getKnowledgeBasesSnapshot(), new TypeReference<>() {});
+           agent.setKnowledgeBases(new HashSet<>(knowledgeBaseRepository.findAllById(kbIds)));
+
+           agent = agentRepository.save(agent);
+
+           // 복원 버전 생성
+           createVersion(agent, "버전 " + version.getVersionNumber() + "로 복원", userId.toString());
+
+           return agent;
+       }
+
+       /**
+        * 버전 비교 (diff)
+        */
+       public AgentVersionDiff getDiff(Long agentId, Long versionId, Long compareWithId) {
+           AgentVersion version1 = versionRepository.findById(versionId).orElseThrow();
+           AgentVersion version2;
+
+           if (compareWithId != null) {
+               version2 = versionRepository.findById(compareWithId).orElseThrow();
+           } else {
+               // 현재 에이전트와 비교
+               Agent current = agentRepository.findById(agentId).orElseThrow();
+               version2 = createTempVersionFromAgent(current);
+           }
+
+           return AgentVersionDiff.builder()
+               .version1(version1.getVersionNumber())
+               .version2(version2.getVersionNumber())
+               .changes(calculateChanges(version1, version2))
+               .build();
+       }
+
+       private List<VersionChange> calculateChanges(AgentVersion v1, AgentVersion v2) {
+           List<VersionChange> changes = new ArrayList<>();
+
+           if (!Objects.equals(v1.getName(), v2.getName())) {
+               changes.add(new VersionChange("name", v1.getName(), v2.getName()));
+           }
+           if (!Objects.equals(v1.getSystemPrompt(), v2.getSystemPrompt())) {
+               changes.add(new VersionChange("systemPrompt", truncate(v1.getSystemPrompt(), 100), truncate(v2.getSystemPrompt(), 100)));
+           }
+           if (!Objects.equals(v1.getModelName(), v2.getModelName())) {
+               changes.add(new VersionChange("modelName", v1.getModelName(), v2.getModelName()));
+           }
+           // ... 나머지 필드
+
+           return changes;
+       }
+   }
+   ```
+
+4. DTO
+   ```java
+   @Data
+   public class AgentVersionSummary {
+       private Long id;
+       private Integer versionNumber;
+       private String changeDescription;
+       private String changedBy;
+       private LocalDateTime createdAt;
+   }
+
+   @Data
+   public class AgentVersionDiff {
+       private Integer version1;
+       private Integer version2;
+       private List<VersionChange> changes;
+   }
+
+   @Data
+   @AllArgsConstructor
+   public class VersionChange {
+       private String field;
+       private String oldValue;
+       private String newValue;
+   }
+   ```
+
+5. AgentService 수정 (버전 자동 생성)
+   ```java
+   @Transactional
+   public AgentResponse updateAgent(Long id, AgentRequest request, Long userId) {
+       Agent agent = getAgentWithOwnerCheck(id, userId);
+
+       // 변경 전 버전 저장
+       versionService.createVersion(agent, "수동 수정", userId.toString());
+
+       // 업데이트 로직...
+
+       return toResponse(agentRepository.save(agent));
+   }
+   ```
+
+6. 프론트엔드 버전 히스토리 UI
+   ```tsx
+   export function VersionHistory({ agentId }: Props) {
+     const { data: versions } = useAgentVersions(agentId);
+     const restoreVersion = useRestoreVersion();
+     const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+     const [compareVersion, setCompareVersion] = useState<number | null>(null);
+
+     return (
+       <div>
+         <h3 className="font-semibold mb-4">버전 히스토리</h3>
+
+         <div className="space-y-2">
+           {versions?.map(version => (
+             <div
+               key={version.id}
+               className={`p-3 border rounded-lg cursor-pointer ${
+                 selectedVersion === version.id ? 'border-blue-500' : ''
+               }`}
+               onClick={() => setSelectedVersion(version.id)}
+             >
+               <div className="flex justify-between">
+                 <span className="font-medium">버전 {version.versionNumber}</span>
+                 <span className="text-sm text-gray-400">
+                   {formatRelativeTime(version.createdAt)}
+                 </span>
+               </div>
+               <p className="text-sm text-gray-500">{version.changeDescription}</p>
+
+               <div className="mt-2 flex gap-2">
+                 <Button
+                   size="sm"
+                   variant="outline"
+                   onClick={() => setCompareVersion(version.id)}
+                 >
+                   비교
+                 </Button>
+                 <Button
+                   size="sm"
+                   variant="outline"
+                   onClick={() => restoreVersion.mutate({ agentId, versionId: version.id })}
+                 >
+                   복원
+                 </Button>
+               </div>
+             </div>
+           ))}
+         </div>
+
+         {/* 버전 비교 모달 */}
+         {compareVersion && (
+           <VersionDiffModal
+             agentId={agentId}
+             versionId={compareVersion}
+             onClose={() => setCompareVersion(null)}
+           />
+         )}
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 에이전트 수정 시 버전 자동 생성
+- [ ] 버전 목록 조회
+- [ ] 버전 상세 조회
+- [ ] 버전 비교 (diff)
+- [ ] 특정 버전으로 복원
+- [ ] 복원 전 현재 상태 자동 저장
+
+[참고 자료]
+- Audit Logging Patterns: https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#auditing

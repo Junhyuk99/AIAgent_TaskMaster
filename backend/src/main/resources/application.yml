@@ -1,0 +1,119 @@
+spring:
+  application:
+    name: aiagent-backend
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope:
+              - email
+              - profile
+          github:
+            client-id: ${GITHUB_CLIENT_ID:}
+            client-secret: ${GITHUB_CLIENT_SECRET:}
+            scope:
+              - user:email
+              - read:user
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:aiagent}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-here-change-in-production}
+  expiration: ${JWT_EXPIRATION:86400000}  # 24 hours in milliseconds
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}  # 7 days in milliseconds
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.aiagent: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# OpenAPI / Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+# Application Settings
+app:
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  oauth2:
+    redirect-uri: ${OAUTH2_REDIRECT_URI:http://localhost:5173/oauth2/callback}
+
+# Embedding Configuration
+embedding:
+  ollama:
+    url: ${OLLAMA_URL:http://localhost:11434}
+    model: ${EMBEDDING_MODEL:nomic-embed-text}
+    dimension: ${EMBEDDING_DIMENSION:768}
+
+# Vector Store Configuration
+vectorstore:
+  type: ${VECTORSTORE_TYPE:chroma}
+  chroma:
+    url: ${CHROMA_URL:http://localhost:8000}
+    timeout: ${CHROMA_TIMEOUT:30000}
+
+# RAG Configuration
+rag:
+  default-top-k: ${RAG_TOP_K:5}
+  default-min-score: ${RAG_MIN_SCORE:0.5}
+  max-context-length: ${RAG_MAX_CONTEXT_LENGTH:4000}
+
+# API Key Configuration
+api-key:
+  max-per-user: ${API_KEY_MAX_PER_USER:10}
+  default-rate-limit: ${API_KEY_DEFAULT_RATE_LIMIT:100}
+
+# Rate Limiting Configuration
+rate-limit:
+  ip:
+    enabled: ${RATE_LIMIT_IP_ENABLED:true}
+    requests-per-minute: ${RATE_LIMIT_IP_RPM:60}
+
+# Agent Configuration
+agent:
+  function-calling:
+    max-iterations: ${AGENT_FUNCTION_CALLING_MAX_ITERATIONS:5}

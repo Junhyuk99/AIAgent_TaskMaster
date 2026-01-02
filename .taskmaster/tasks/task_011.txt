@@ -1,0 +1,214 @@
+================================================================================
+TASK #011: LLM 설정 페이지 UI 구현
+================================================================================
+
+[기본 정보]
+- ID: 11
+- 우선순위: medium
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #7 (LLM 서버 관리 API), Task #6 (인증 UI)
+
+[설명]
+LLM 서버 관리 페이지 UI - 서버 목록, 추가/편집, 연결 테스트, 모델 목록 표시
+
+[상세 구현 가이드]
+1. 페이지 및 컴포넌트 구조
+   ```
+   src/pages/settings/
+   └── LlmSettingsPage.tsx
+
+   src/components/llm/
+   ├── LlmServerList.tsx
+   ├── LlmServerCard.tsx
+   ├── LlmServerModal.tsx
+   ├── ConnectionTest.tsx
+   └── ModelList.tsx
+   ```
+
+2. LLM 설정 페이지 (/settings/llm)
+   ```tsx
+   export function LlmSettingsPage() {
+     const { data: servers, isLoading } = useLlmServers();
+     const [isModalOpen, setIsModalOpen] = useState(false);
+     const [editingServer, setEditingServer] = useState<LlmServer | null>(null);
+
+     return (
+       <div className="p-6">
+         <header className="flex justify-between items-center mb-6">
+           <div>
+             <h1 className="text-2xl font-bold">LLM 서버 설정</h1>
+             <p className="text-gray-500">로컬 또는 원격 LLM 서버를 연결하세요</p>
+           </div>
+           <Button onClick={() => setIsModalOpen(true)}>
+             + 서버 추가
+           </Button>
+         </header>
+
+         <LlmServerList
+           servers={servers}
+           onEdit={setEditingServer}
+           isLoading={isLoading}
+         />
+
+         <LlmServerModal
+           isOpen={isModalOpen || !!editingServer}
+           server={editingServer}
+           onClose={() => { setIsModalOpen(false); setEditingServer(null); }}
+         />
+       </div>
+     );
+   }
+   ```
+
+3. LlmServerCard 컴포넌트
+   ```tsx
+   export function LlmServerCard({ server }: { server: LlmServer }) {
+     const [showModels, setShowModels] = useState(false);
+     const testConnection = useTestConnection();
+     const deleteServer = useDeleteLlmServer();
+
+     return (
+       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+         <div className="flex justify-between items-start">
+           <div>
+             <div className="flex items-center gap-2">
+               <h3 className="font-semibold text-lg">{server.name}</h3>
+               <Badge variant={server.isActive ? 'success' : 'default'}>
+                 {server.isActive ? '활성' : '비활성'}
+               </Badge>
+             </div>
+             <p className="text-sm text-gray-500 mt-1">{server.baseUrl}</p>
+             <Badge variant="outline" className="mt-2">
+               {server.type}
+             </Badge>
+           </div>
+
+           <DropdownMenu>
+             <DropdownItem onClick={() => onEdit(server)}>편집</DropdownItem>
+             <DropdownItem onClick={() => testConnection.mutate(server.id)}>
+               연결 테스트
+             </DropdownItem>
+             <DropdownItem onClick={() => deleteServer.mutate(server.id)} variant="danger">
+               삭제
+             </DropdownItem>
+           </DropdownMenu>
+         </div>
+
+         {/* 연결 테스트 결과 */}
+         <ConnectionTestResult serverId={server.id} />
+
+         {/* 모델 목록 토글 */}
+         <button onClick={() => setShowModels(!showModels)} className="mt-4">
+           {showModels ? '모델 숨기기' : '사용 가능한 모델 보기'} ({server.modelCount})
+         </button>
+
+         {showModels && <ModelList serverId={server.id} />}
+       </div>
+     );
+   }
+   ```
+
+4. LlmServerModal (추가/편집)
+   ```tsx
+   export function LlmServerModal({ isOpen, server, onClose }: Props) {
+     const createServer = useCreateLlmServer();
+     const updateServer = useUpdateLlmServer();
+     const isEdit = !!server;
+
+     const schema = z.object({
+       name: z.string().min(1, '이름을 입력하세요'),
+       type: z.enum(['OLLAMA', 'VLLM', 'LOCAL_AI', 'CUSTOM']),
+       baseUrl: z.string().url('유효한 URL을 입력하세요'),
+       authToken: z.string().optional(),
+     });
+
+     return (
+       <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? '서버 편집' : '서버 추가'}>
+         <form onSubmit={handleSubmit(onSubmit)}>
+           <Input label="서버 이름" {...register('name')} />
+
+           <Select label="서버 타입" {...register('type')}>
+             <option value="OLLAMA">Ollama</option>
+             <option value="VLLM">vLLM (OpenAI 호환)</option>
+             <option value="LOCAL_AI">LocalAI</option>
+             <option value="CUSTOM">커스텀</option>
+           </Select>
+
+           <Input
+             label="서버 주소"
+             placeholder="http://localhost:11434"
+             {...register('baseUrl')}
+           />
+
+           <Input
+             label="인증 토큰 (선택)"
+             type="password"
+             {...register('authToken')}
+           />
+
+           <div className="flex gap-2 mt-4">
+             <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+             <Button type="submit">{isEdit ? '저장' : '추가'}</Button>
+           </div>
+         </form>
+       </Modal>
+     );
+   }
+   ```
+
+5. ConnectionTest 컴포넌트
+   ```tsx
+   export function ConnectionTestResult({ serverId }: Props) {
+     const { data: result, isLoading, refetch } = useConnectionTest(serverId);
+
+     if (!result) return null;
+
+     return (
+       <div className={`mt-3 p-3 rounded ${result.success ? 'bg-green-50' : 'bg-red-50'}`}>
+         <div className="flex items-center gap-2">
+           {result.success ? (
+             <CheckCircle className="text-green-500" />
+           ) : (
+             <XCircle className="text-red-500" />
+           )}
+           <span>{result.success ? '연결 성공' : '연결 실패'}</span>
+         </div>
+         {result.error && <p className="text-sm text-red-600 mt-1">{result.error}</p>}
+       </div>
+     );
+   }
+   ```
+
+6. ModelList 컴포넌트
+   ```tsx
+   export function ModelList({ serverId }: Props) {
+     const { data: models, isLoading } = useModels(serverId);
+
+     return (
+       <div className="mt-4 border-t pt-4">
+         <h4 className="font-medium mb-2">사용 가능한 모델</h4>
+         <div className="space-y-2">
+           {models.map(model => (
+             <div key={model.name} className="flex justify-between text-sm">
+               <span>{model.name}</span>
+               <span className="text-gray-500">{formatSize(model.size)}</span>
+             </div>
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] LLM 서버 목록 페이지 표시
+- [ ] 서버 추가 모달 열기/닫기
+- [ ] 서버 추가 → 목록에 표시
+- [ ] 서버 편집 → 변경 사항 반영
+- [ ] 연결 테스트 버튼 클릭 → 결과 표시
+- [ ] 모델 목록 토글 동작
+- [ ] 서버 삭제 확인 다이얼로그
+
+[참고 자료]
+- React Query: https://tanstack.com/query/latest

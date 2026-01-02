@@ -1,0 +1,260 @@
+================================================================================
+TASK #029: Swagger/OpenAPI 문서 자동 생성
+================================================================================
+
+[기본 정보]
+- ID: 29
+- 우선순위: medium
+- 복잡도: 3/10
+- 상태: pending
+- 의존성: Task #28 (외부 API 엔드포인트)
+
+[설명]
+SpringDoc OpenAPI를 이용한 API 문서 자동 생성 및 Swagger UI 제공
+
+[상세 구현 가이드]
+1. 의존성 추가
+   ```gradle
+   implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0'
+   ```
+
+2. OpenAPI 설정 클래스
+   ```java
+   @Configuration
+   public class OpenApiConfig {
+
+       @Bean
+       public OpenAPI customOpenAPI() {
+           return new OpenAPI()
+               .info(new Info()
+                   .title("AI Agent Builder API")
+                   .version("1.0.0")
+                   .description("AI 에이전트 빌더 플랫폼 API 문서")
+                   .contact(new Contact()
+                       .name("Support")
+                       .email("support@example.com"))
+                   .license(new License()
+                       .name("MIT")
+                       .url("https://opensource.org/licenses/MIT")))
+               .externalDocs(new ExternalDocumentation()
+                   .description("GitHub Repository")
+                   .url("https://github.com/your-org/ai-agent-builder"))
+               .addSecurityItem(new SecurityRequirement()
+                   .addList("bearerAuth")
+                   .addList("apiKey"))
+               .components(new Components()
+                   .addSecuritySchemes("bearerAuth", new SecurityScheme()
+                       .type(SecurityScheme.Type.HTTP)
+                       .scheme("bearer")
+                       .bearerFormat("JWT")
+                       .description("JWT 인증 토큰"))
+                   .addSecuritySchemes("apiKey", new SecurityScheme()
+                       .type(SecurityScheme.Type.APIKEY)
+                       .in(SecurityScheme.In.HEADER)
+                       .name("X-API-Key")
+                       .description("API 키 인증")));
+       }
+
+       @Bean
+       public GroupedOpenApi publicApi() {
+           return GroupedOpenApi.builder()
+               .group("public")
+               .displayName("Public API")
+               .pathsToMatch("/api/v1/**")
+               .build();
+       }
+
+       @Bean
+       public GroupedOpenApi internalApi() {
+           return GroupedOpenApi.builder()
+               .group("internal")
+               .displayName("Internal API")
+               .pathsToMatch("/api/**")
+               .pathsToExclude("/api/v1/**")
+               .build();
+       }
+   }
+   ```
+
+3. application.yml 설정
+   ```yaml
+   springdoc:
+     api-docs:
+       path: /api-docs
+       enabled: true
+     swagger-ui:
+       path: /swagger-ui.html
+       enabled: true
+       operationsSorter: method
+       tagsSorter: alpha
+       displayRequestDuration: true
+       filter: true
+     show-actuator: false
+     packages-to-scan: com.aiagent.controller
+   ```
+
+4. 컨트롤러 어노테이션 추가
+   ```java
+   @RestController
+   @RequestMapping("/api/v1")
+   @Tag(name = "External Chat API", description = "외부에서 에이전트와 대화하기 위한 API")
+   public class ExternalApiController {
+
+       @Operation(
+           summary = "에이전트와 대화",
+           description = "지정된 에이전트에 메시지를 전송하고 응답을 받습니다. RAG와 Function Calling이 자동으로 적용됩니다."
+       )
+       @ApiResponses({
+           @ApiResponse(responseCode = "200", description = "성공",
+               content = @Content(schema = @Schema(implementation = ExternalChatResponse.class))),
+           @ApiResponse(responseCode = "401", description = "인증 실패",
+               content = @Content(schema = @Schema(implementation = ExternalErrorResponse.class))),
+           @ApiResponse(responseCode = "404", description = "에이전트 없음"),
+           @ApiResponse(responseCode = "429", description = "요청 한도 초과")
+       })
+       @PostMapping("/chat/{agentId}")
+       public ResponseEntity<ExternalChatResponse> chat(
+           @Parameter(description = "에이전트 ID", required = true, example = "123")
+           @PathVariable Long agentId,
+
+           @io.swagger.v3.oas.annotations.parameters.RequestBody(
+               description = "채팅 요청",
+               required = true,
+               content = @Content(schema = @Schema(implementation = ExternalChatRequest.class)))
+           @RequestBody ExternalChatRequest request,
+
+           @Parameter(description = "API 키", required = true)
+           @RequestHeader("X-API-Key") String apiKey) {
+           // ...
+       }
+   }
+   ```
+
+5. DTO Schema 어노테이션
+   ```java
+   @Data
+   @Schema(description = "채팅 요청")
+   public class ExternalChatRequest {
+
+       @Schema(description = "사용자 메시지", example = "안녕하세요, 오늘 날씨 어때요?", required = true)
+       @NotBlank
+       private String message;
+
+       @Schema(description = "대화 ID (이전 대화 이어가기)", example = "conv_abc123")
+       private String conversationId;
+
+       @Schema(description = "대화 히스토리 (클라이언트 관리 방식)")
+       private List<ExternalMessage> history;
+
+       @Schema(description = "스트리밍 응답 여부", defaultValue = "false")
+       private Boolean stream = false;
+   }
+
+   @Data
+   @Schema(description = "채팅 응답")
+   public class ExternalChatResponse {
+
+       @Schema(description = "응답 ID", example = "resp_xyz789")
+       private String id;
+
+       @Schema(description = "대화 ID", example = "conv_abc123")
+       private String conversationId;
+
+       @Schema(description = "AI 응답 내용", example = "안녕하세요! 오늘 서울 날씨는 맑고 기온은 22도입니다.")
+       private String content;
+
+       @Schema(description = "참조된 지식 소스")
+       private List<ExternalSource> sources;
+
+       @Schema(description = "토큰 사용량")
+       private ExternalUsage usage;
+
+       @Schema(description = "응답 생성 시간 (Unix timestamp)", example = "1703836800000")
+       private Long timestamp;
+   }
+   ```
+
+6. Security 설정 (Swagger UI 접근 허용)
+   ```java
+   @Configuration
+   public class SecurityConfig {
+
+       @Bean
+       public SecurityFilterChain filterChain(HttpSecurity http) {
+           http.authorizeHttpRequests(auth -> auth
+               .requestMatchers(
+                   "/swagger-ui.html",
+                   "/swagger-ui/**",
+                   "/api-docs/**",
+                   "/v3/api-docs/**"
+               ).permitAll()
+               // ... 나머지 설정
+           );
+           return http.build();
+       }
+   }
+   ```
+
+7. 에이전트별 동적 API 문서 (옵션)
+   ```java
+   @RestController
+   @RequestMapping("/api/agents/{agentId}")
+   public class AgentApiDocController {
+
+       @GetMapping("/openapi")
+       @Operation(summary = "에이전트별 OpenAPI 스펙 생성")
+       public String getAgentOpenApiSpec(@PathVariable Long agentId) {
+           Agent agent = agentService.getAgent(agentId);
+
+           // 에이전트 설정에 맞는 OpenAPI 스펙 동적 생성
+           OpenAPI spec = new OpenAPI()
+               .info(new Info()
+                   .title(agent.getName() + " API")
+                   .description(agent.getDescription()))
+               // ...
+
+           return objectMapper.writeValueAsString(spec);
+       }
+   }
+   ```
+
+8. 프론트엔드 API 문서 링크
+   ```tsx
+   // 에이전트 배포 탭에서 API 문서 링크 제공
+   export function DeployTab({ agent }: Props) {
+     const apiDocsUrl = `/swagger-ui.html?urls.primaryName=public#/External%20Chat%20API`;
+
+     return (
+       <div>
+         <section>
+           <h3>API 문서</h3>
+           <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer">
+             Swagger UI에서 API 문서 보기 →
+           </a>
+         </section>
+
+         <section>
+           <h3>빠른 시작</h3>
+           <CodeBlock language="bash">
+             {`curl -X POST ${window.location.origin}/api/v1/chat/${agent.id} \\
+   -H "Content-Type: application/json" \\
+   -H "X-API-Key: YOUR_API_KEY" \\
+   -d '{"message": "Hello!"}'`}
+           </CodeBlock>
+         </section>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] /swagger-ui.html 접근 가능
+- [ ] /api-docs JSON 스펙 반환
+- [ ] API 그룹 (public/internal) 분리 표시
+- [ ] 인증 방식 (JWT, API Key) 표시
+- [ ] 요청/응답 예시 표시
+- [ ] Try it out 기능 동작
+
+[참고 자료]
+- SpringDoc OpenAPI: https://springdoc.org/
+- OpenAPI Specification: https://swagger.io/specification/

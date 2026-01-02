@@ -1,0 +1,333 @@
+================================================================================
+TASK #032: 다국어 지원 (i18n) 구현
+================================================================================
+
+[기본 정보]
+- ID: 32
+- 우선순위: low
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #5 (기본 UI 레이아웃)
+
+[설명]
+한국어/영어 다국어 지원 구현
+
+[상세 구현 가이드]
+1. 의존성 설치
+   ```bash
+   npm install i18next react-i18next i18next-browser-languagedetector
+   ```
+
+2. i18n 설정 파일
+   ```typescript
+   // src/lib/i18n.ts
+   import i18n from 'i18next';
+   import { initReactI18next } from 'react-i18next';
+   import LanguageDetector from 'i18next-browser-languagedetector';
+
+   import ko from '../locales/ko.json';
+   import en from '../locales/en.json';
+
+   i18n
+     .use(LanguageDetector)
+     .use(initReactI18next)
+     .init({
+       resources: {
+         ko: { translation: ko },
+         en: { translation: en },
+       },
+       fallbackLng: 'ko',
+       interpolation: {
+         escapeValue: false,
+       },
+       detection: {
+         order: ['localStorage', 'navigator'],
+         caches: ['localStorage'],
+       },
+     });
+
+   export default i18n;
+   ```
+
+3. 한국어 번역 파일 (ko.json)
+   ```json
+   {
+     "common": {
+       "save": "저장",
+       "cancel": "취소",
+       "delete": "삭제",
+       "edit": "편집",
+       "create": "생성",
+       "search": "검색",
+       "loading": "로딩 중...",
+       "error": "오류가 발생했습니다",
+       "confirm": "확인",
+       "back": "뒤로"
+     },
+     "auth": {
+       "login": "로그인",
+       "logout": "로그아웃",
+       "register": "회원가입",
+       "email": "이메일",
+       "password": "비밀번호",
+       "confirmPassword": "비밀번호 확인",
+       "name": "이름",
+       "forgotPassword": "비밀번호 찾기",
+       "loginSuccess": "로그인되었습니다",
+       "registerSuccess": "회원가입이 완료되었습니다"
+     },
+     "nav": {
+       "dashboard": "대시보드",
+       "agents": "에이전트",
+       "functions": "함수",
+       "knowledge": "지식",
+       "settings": "설정",
+       "llmSettings": "LLM 설정",
+       "apiKeys": "API 키",
+       "usage": "사용량"
+     },
+     "agent": {
+       "title": "에이전트",
+       "createAgent": "새 에이전트",
+       "name": "에이전트 이름",
+       "description": "설명",
+       "systemPrompt": "시스템 프롬프트",
+       "selectLlm": "LLM 서버 선택",
+       "selectModel": "모델 선택",
+       "temperature": "Temperature",
+       "maxTokens": "Max Tokens",
+       "functions": "함수 연결",
+       "knowledge": "지식 연결",
+       "test": "테스트",
+       "deploy": "배포",
+       "duplicate": "복제",
+       "deleteConfirm": "이 에이전트를 삭제하시겠습니까?"
+     },
+     "function": {
+       "title": "함수",
+       "createFunction": "새 함수",
+       "name": "함수명",
+       "description": "설명",
+       "parameters": "파라미터",
+       "addParameter": "파라미터 추가",
+       "parameterName": "파라미터명",
+       "parameterType": "타입",
+       "required": "필수",
+       "implementation": "구현",
+       "httpApi": "HTTP API",
+       "code": "코드",
+       "template": "템플릿",
+       "test": "테스트",
+       "jsonSchema": "JSON Schema"
+     },
+     "knowledge": {
+       "title": "지식 베이스",
+       "createKnowledgeBase": "새 지식 베이스",
+       "name": "이름",
+       "description": "설명",
+       "documents": "문서",
+       "uploadDocuments": "문서 업로드",
+       "dragDropHint": "파일을 여기에 드래그하거나 클릭하여 선택",
+       "supportedFormats": "PDF, TXT, DOCX, MD, CSV, JSON (최대 50MB)",
+       "chunkSize": "청크 크기",
+       "chunkOverlap": "청크 오버랩",
+       "embeddingModel": "임베딩 모델",
+       "searchTest": "검색 테스트",
+       "status": {
+         "pending": "대기중",
+         "processing": "처리중",
+         "completed": "완료",
+         "failed": "실패"
+       }
+     },
+     "chat": {
+       "placeholder": "메시지를 입력하세요...",
+       "send": "전송",
+       "newConversation": "새 대화",
+       "sources": "참고 자료",
+       "relevance": "관련도"
+     },
+     "llm": {
+       "title": "LLM 서버 설정",
+       "addServer": "서버 추가",
+       "serverName": "서버 이름",
+       "serverType": "서버 타입",
+       "serverUrl": "서버 주소",
+       "authToken": "인증 토큰",
+       "testConnection": "연결 테스트",
+       "connectionSuccess": "연결 성공",
+       "connectionFailed": "연결 실패",
+       "availableModels": "사용 가능한 모델"
+     },
+     "apiKey": {
+       "title": "API 키 관리",
+       "createKey": "새 API 키",
+       "keyName": "키 이름",
+       "lastUsed": "마지막 사용",
+       "usageCount": "사용 횟수",
+       "copyKey": "키 복사",
+       "keyCopied": "API 키가 복사되었습니다",
+       "keyWarning": "이 키는 다시 볼 수 없습니다. 안전한 곳에 저장하세요."
+     },
+     "errors": {
+       "required": "필수 항목입니다",
+       "invalidEmail": "유효한 이메일을 입력하세요",
+       "passwordMismatch": "비밀번호가 일치하지 않습니다",
+       "minLength": "{{min}}자 이상이어야 합니다",
+       "networkError": "네트워크 오류가 발생했습니다",
+       "unauthorized": "인증이 필요합니다"
+     }
+   }
+   ```
+
+4. 영어 번역 파일 (en.json)
+   ```json
+   {
+     "common": {
+       "save": "Save",
+       "cancel": "Cancel",
+       "delete": "Delete",
+       "edit": "Edit",
+       "create": "Create",
+       "search": "Search",
+       "loading": "Loading...",
+       "error": "An error occurred",
+       "confirm": "Confirm",
+       "back": "Back"
+     },
+     "auth": {
+       "login": "Log in",
+       "logout": "Log out",
+       "register": "Sign up",
+       "email": "Email",
+       "password": "Password",
+       "confirmPassword": "Confirm Password",
+       "name": "Name",
+       "forgotPassword": "Forgot password?",
+       "loginSuccess": "Logged in successfully",
+       "registerSuccess": "Registration completed"
+     },
+     "nav": {
+       "dashboard": "Dashboard",
+       "agents": "Agents",
+       "functions": "Functions",
+       "knowledge": "Knowledge",
+       "settings": "Settings",
+       "llmSettings": "LLM Settings",
+       "apiKeys": "API Keys",
+       "usage": "Usage"
+     }
+     // ... 나머지 번역
+   }
+   ```
+
+5. 컴포넌트에서 사용
+   ```tsx
+   import { useTranslation } from 'react-i18next';
+
+   export function AgentCard({ agent }: Props) {
+     const { t } = useTranslation();
+
+     return (
+       <div className="...">
+         <h3>{agent.name}</h3>
+         <button onClick={handleEdit}>{t('common.edit')}</button>
+         <button onClick={handleDelete}>{t('common.delete')}</button>
+       </div>
+     );
+   }
+   ```
+
+6. 언어 전환 컴포넌트
+   ```tsx
+   export function LanguageSwitcher() {
+     const { i18n } = useTranslation();
+
+     const languages = [
+       { code: 'ko', label: '한국어', flag: '🇰🇷' },
+       { code: 'en', label: 'English', flag: '🇺🇸' },
+     ];
+
+     return (
+       <Dropdown>
+         <DropdownTrigger>
+           <button className="flex items-center gap-2">
+             <Globe size={20} />
+             {languages.find(l => l.code === i18n.language)?.flag}
+           </button>
+         </DropdownTrigger>
+         <DropdownMenu>
+           {languages.map(lang => (
+             <DropdownItem
+               key={lang.code}
+               onClick={() => i18n.changeLanguage(lang.code)}
+               className={i18n.language === lang.code ? 'bg-blue-50' : ''}
+             >
+               <span>{lang.flag}</span>
+               <span>{lang.label}</span>
+             </DropdownItem>
+           ))}
+         </DropdownMenu>
+       </Dropdown>
+     );
+   }
+   ```
+
+7. App.tsx에 i18n 초기화
+   ```tsx
+   import './lib/i18n';  // 최상단에 import
+
+   function App() {
+     return (
+       <Suspense fallback={<LoadingSpinner />}>
+         <BrowserRouter>
+           <Routes>
+             {/* ... */}
+           </Routes>
+         </BrowserRouter>
+       </Suspense>
+     );
+   }
+   ```
+
+8. 날짜/숫자 포맷 로케일
+   ```typescript
+   // src/lib/format.ts
+   import { format } from 'date-fns';
+   import { ko, enUS } from 'date-fns/locale';
+   import i18n from './i18n';
+
+   const locales = { ko, en: enUS };
+
+   export function formatDate(date: Date | string, pattern = 'PPP') {
+     const locale = locales[i18n.language as keyof typeof locales] || ko;
+     return format(new Date(date), pattern, { locale });
+   }
+
+   export function formatNumber(num: number) {
+     return new Intl.NumberFormat(i18n.language).format(num);
+   }
+
+   export function formatRelativeTime(date: Date | string) {
+     const rtf = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'auto' });
+     const diff = Date.now() - new Date(date).getTime();
+     const minutes = Math.floor(diff / 60000);
+
+     if (minutes < 60) return rtf.format(-minutes, 'minute');
+     if (minutes < 1440) return rtf.format(-Math.floor(minutes / 60), 'hour');
+     return rtf.format(-Math.floor(minutes / 1440), 'day');
+   }
+   ```
+
+[테스트 기준]
+- [ ] 기본 언어 (한국어) 표시
+- [ ] 언어 전환 → UI 텍스트 변경
+- [ ] 브라우저 언어 자동 감지
+- [ ] localStorage에 언어 설정 저장
+- [ ] 페이지 새로고침 후 언어 유지
+- [ ] 날짜/숫자 포맷 로케일 적용
+- [ ] 폼 검증 에러 메시지 번역
+
+[참고 자료]
+- react-i18next: https://react.i18next.com/
+- date-fns locales: https://date-fns.org/docs/I18n

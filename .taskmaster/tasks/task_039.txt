@@ -1,0 +1,272 @@
+================================================================================
+TASK #039: 메인 랜딩 페이지 구현
+================================================================================
+
+[기본 정보]
+- ID: 39
+- 우선순위: low
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #5 (기본 UI 레이아웃), Task #6 (인증 UI)
+
+[설명]
+서비스 소개, 주요 기능 하이라이트, CTA 버튼 랜딩 페이지
+
+[상세 구현 가이드]
+1. 랜딩 페이지 구조
+   ```
+   src/pages/
+   └── LandingPage.tsx
+
+   src/components/landing/
+   ├── HeroSection.tsx
+   ├── FeaturesSection.tsx
+   ├── HowItWorksSection.tsx
+   ├── UseCasesSection.tsx
+   └── CTASection.tsx
+   ```
+
+2. LandingPage 컴포넌트
+   ```tsx
+   export function LandingPage() {
+     return (
+       <div className="min-h-screen">
+         <LandingHeader />
+         <main>
+           <HeroSection />
+           <FeaturesSection />
+           <HowItWorksSection />
+           <UseCasesSection />
+           <CTASection />
+         </main>
+         <LandingFooter />
+       </div>
+     );
+   }
+   ```
+
+3. LandingHeader
+   ```tsx
+   export function LandingHeader() {
+     const { isAuthenticated } = useAuth();
+
+     return (
+       <header className="fixed top-0 w-full bg-white/80 backdrop-blur-sm z-50 border-b">
+         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+           <div className="flex items-center gap-2">
+             <Bot className="w-8 h-8 text-blue-600" />
+             <span className="text-xl font-bold">AI Agent Builder</span>
+           </div>
+
+           <nav className="hidden md:flex items-center gap-8">
+             <a href="#features" className="text-gray-600 hover:text-gray-900">기능</a>
+             <a href="#how-it-works" className="text-gray-600 hover:text-gray-900">사용 방법</a>
+             <a href="#use-cases" className="text-gray-600 hover:text-gray-900">활용 사례</a>
+           </nav>
+
+           <div className="flex items-center gap-4">
+             {isAuthenticated ? (
+               <Button as={Link} to="/dashboard">대시보드</Button>
+             ) : (
+               <>
+                 <Link to="/login" className="text-gray-600 hover:text-gray-900">로그인</Link>
+                 <Button as={Link} to="/register">무료로 시작하기</Button>
+               </>
+             )}
+           </div>
+         </div>
+       </header>
+     );
+   }
+   ```
+
+4. HeroSection
+   ```tsx
+   export function HeroSection() {
+     return (
+       <section className="pt-32 pb-20 px-4 bg-gradient-to-b from-blue-50 to-white">
+         <div className="max-w-4xl mx-auto text-center">
+           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
+             코드 없이 만드는<br />
+             <span className="text-blue-600">나만의 AI 에이전트</span>
+           </h1>
+
+           <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
+             로컬 LLM 연결, 함수 호출, RAG까지.
+             노코드로 강력한 AI 에이전트를 만들고 배포하세요.
+           </p>
+
+           <div className="flex flex-col sm:flex-row gap-4 justify-center">
+             <Button as={Link} to="/register" size="lg">
+               무료로 시작하기
+             </Button>
+             <Button as={Link} to="/demo" variant="outline" size="lg">
+               데모 보기
+             </Button>
+           </div>
+
+           {/* Hero 이미지/스크린샷 */}
+           <div className="mt-16 relative">
+             <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent z-10" />
+             <img
+               src="/images/hero-screenshot.png"
+               alt="AI Agent Builder Dashboard"
+               className="rounded-xl shadow-2xl border"
+             />
+           </div>
+         </div>
+       </section>
+     );
+   }
+   ```
+
+5. FeaturesSection
+   ```tsx
+   export function FeaturesSection() {
+     const features = [
+       {
+         icon: <Server className="w-8 h-8" />,
+         title: '로컬 LLM 직접 연결',
+         description: 'Ollama, vLLM, LocalAI 등 로컬에 설치된 LLM을 직접 연결하세요. API 비용 걱정 없이 무제한으로 사용할 수 있습니다.',
+       },
+       {
+         icon: <Code className="w-8 h-8" />,
+         title: '커스텀 함수 정의',
+         description: 'HTTP API 호출, 코드 실행 등 다양한 방식으로 함수를 정의하고 에이전트에 연결하세요.',
+       },
+       {
+         icon: <Database className="w-8 h-8" />,
+         title: 'RAG 파이프라인',
+         description: '문서를 업로드하면 자동으로 청킹, 임베딩, 검색 파이프라인이 구성됩니다.',
+       },
+       {
+         icon: <Rocket className="w-8 h-8" />,
+         title: '원클릭 배포',
+         description: 'API 엔드포인트와 임베드 위젯으로 어디서든 에이전트를 사용하세요.',
+       },
+     ];
+
+     return (
+       <section id="features" className="py-20 px-4">
+         <div className="max-w-6xl mx-auto">
+           <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
+             강력한 기능, 간단한 사용
+           </h2>
+           <p className="text-gray-600 text-center mb-16 max-w-2xl mx-auto">
+             복잡한 AI 시스템을 드래그 앤 드롭으로 구축하세요.
+           </p>
+
+           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+             {features.map((feature, idx) => (
+               <div key={idx} className="text-center">
+                 <div className="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
+                   {feature.icon}
+                 </div>
+                 <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
+                 <p className="text-gray-600">{feature.description}</p>
+               </div>
+             ))}
+           </div>
+         </div>
+       </section>
+     );
+   }
+   ```
+
+6. HowItWorksSection
+   ```tsx
+   export function HowItWorksSection() {
+     const steps = [
+       { step: 1, title: 'LLM 서버 연결', description: '로컬 또는 원격 LLM 서버를 연결합니다.' },
+       { step: 2, title: '에이전트 생성', description: '시스템 프롬프트와 설정을 정의합니다.' },
+       { step: 3, title: '기능 확장', description: '함수와 지식 베이스를 연결합니다.' },
+       { step: 4, title: '테스트 & 배포', description: 'API 또는 위젯으로 배포합니다.' },
+     ];
+
+     return (
+       <section id="how-it-works" className="py-20 px-4 bg-gray-50">
+         <div className="max-w-4xl mx-auto">
+           <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
+             어떻게 작동하나요?
+           </h2>
+
+           <div className="relative">
+             {/* 연결선 */}
+             <div className="absolute top-8 left-8 right-8 h-0.5 bg-blue-200 hidden md:block" />
+
+             <div className="grid md:grid-cols-4 gap-8">
+               {steps.map((item) => (
+                 <div key={item.step} className="relative text-center">
+                   <div className="w-16 h-16 mx-auto mb-4 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                     {item.step}
+                   </div>
+                   <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
+                   <p className="text-gray-600 text-sm">{item.description}</p>
+                 </div>
+               ))}
+             </div>
+           </div>
+         </div>
+       </section>
+     );
+   }
+   ```
+
+7. CTASection
+   ```tsx
+   export function CTASection() {
+     return (
+       <section className="py-20 px-4 bg-blue-600">
+         <div className="max-w-4xl mx-auto text-center text-white">
+           <h2 className="text-3xl md:text-4xl font-bold mb-6">
+             지금 바로 시작하세요
+           </h2>
+           <p className="text-xl text-blue-100 mb-10">
+             무료로 가입하고 첫 번째 AI 에이전트를 만들어보세요.
+           </p>
+           <Button
+             as={Link}
+             to="/register"
+             size="lg"
+             className="bg-white text-blue-600 hover:bg-blue-50"
+           >
+             무료로 시작하기
+           </Button>
+         </div>
+       </section>
+     );
+   }
+   ```
+
+8. 반응형 및 애니메이션
+   ```tsx
+   // Framer Motion 사용 (옵션)
+   import { motion } from 'framer-motion';
+
+   export function FeatureCard({ feature, index }: Props) {
+     return (
+       <motion.div
+         initial={{ opacity: 0, y: 20 }}
+         whileInView={{ opacity: 1, y: 0 }}
+         transition={{ delay: index * 0.1 }}
+         viewport={{ once: true }}
+         className="text-center"
+       >
+         {/* ... */}
+       </motion.div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 메인 페이지 (/) 접근
+- [ ] 반응형 레이아웃 (모바일/태블릿/데스크톱)
+- [ ] 내비게이션 링크 동작 (앵커 스크롤)
+- [ ] 로그인/회원가입 버튼 → 해당 페이지 이동
+- [ ] 인증된 사용자는 대시보드 버튼 표시
+- [ ] 이미지 로드 확인
+- [ ] 애니메이션 효과 (옵션)
+
+[참고 자료]
+- Tailwind CSS: https://tailwindcss.com/
+- Framer Motion: https://www.framer.com/motion/

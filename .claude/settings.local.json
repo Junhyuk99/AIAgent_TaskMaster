@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__task-master-ai__parse_prd",
+      "Bash(npx task-master:*)",
+      "mcp__task-master-ai__set_task_status",
+      "Bash(mkdir:*)",
+      "Bash(gradle wrapper:*)",
+      "Bash(curl:*)",
+      "Bash(chmod +x \"C:\\\\Projects\\\\VSCode\\\\AIAgent_TaskMaster\\\\backend\\\\gradlew\")",
+      "Bash(./gradlew.bat build:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(timeout 15 npm run dev:*)",
+      "mcp__task-master-ai__next_task",
+      "Bash(./gradlew.bat:*)",
+      "mcp__task-master-ai__get_task",
+      "mcp__task-master-ai__get_tasks",
+      "Bash(npx tsc:*)",
+      "Bash(where:*)",
+      "mcp__task-master-ai__update_subtask",
+      "Bash(npm run test:run:*)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(paste:*)",
+      "Bash(python3 -c \" import json with open\\(''tasks.json''\\) as f: data = json.load\\(f\\) for t in data[''tasks'']: print\\(f\"\"{t[''id'']}: {t[''status'']} - {t[''title'']}\"\"\\) \")",
+      "Bash(python3:*)",
+      "Bash(winget search:*)",
+      "Bash(choco --version)",
+      "Bash(choco install:*)",
+      "Bash(refreshenv)",
+      "Bash(export JAVA_HOME=\"/c/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\")",
+      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\" PATH=\"$JAVA_HOME/bin:$PATH\" ./gradlew.bat:*)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-17.0.17.10-hotspot\" PATH=\"$JAVA_HOME/bin:$PATH\" ./gradlew.bat test:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "task-master-ai"
+  ]
+}

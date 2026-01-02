@@ -1,0 +1,258 @@
+================================================================================
+TASK #034: 입력값 검증 및 보안 강화
+================================================================================
+
+[기본 정보]
+- ID: 34
+- 우선순위: high
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템)
+
+[설명]
+XSS, SQL Injection 방지, 입력값 유효성 검증 강화
+
+[상세 구현 가이드]
+1. Bean Validation 의존성 확인
+   ```gradle
+   implementation 'org.springframework.boot:spring-boot-starter-validation'
+   ```
+
+2. DTO 유효성 검증 강화
+   ```java
+   @Data
+   public class AgentRequest {
+       @NotBlank(message = "에이전트 이름은 필수입니다")
+       @Size(min = 2, max = 100, message = "이름은 2-100자 사이여야 합니다")
+       @Pattern(regexp = "^[가-힣a-zA-Z0-9\\s\\-_]+$", message = "이름에 특수문자를 사용할 수 없습니다")
+       private String name;
+
+       @Size(max = 500, message = "설명은 500자를 초과할 수 없습니다")
+       private String description;
+
+       @NotBlank(message = "시스템 프롬프트는 필수입니다")
+       @Size(max = 10000, message = "시스템 프롬프트는 10000자를 초과할 수 없습니다")
+       private String systemPrompt;
+
+       @NotNull(message = "LLM 서버를 선택해주세요")
+       @Positive
+       private Long llmServerId;
+
+       @DecimalMin(value = "0.0", message = "Temperature는 0 이상이어야 합니다")
+       @DecimalMax(value = "2.0", message = "Temperature는 2 이하여야 합니다")
+       private Double temperature = 0.7;
+
+       @Min(value = 1, message = "Max Tokens는 1 이상이어야 합니다")
+       @Max(value = 32000, message = "Max Tokens는 32000 이하여야 합니다")
+       private Integer maxTokens = 2048;
+   }
+   ```
+
+3. 커스텀 Validator 작성
+   ```java
+   @Documented
+   @Constraint(validatedBy = SafeHtmlValidator.class)
+   @Target({ElementType.FIELD})
+   @Retention(RetentionPolicy.RUNTIME)
+   public @interface SafeHtml {
+       String message() default "허용되지 않는 HTML 태그가 포함되어 있습니다";
+       Class<?>[] groups() default {};
+       Class<? extends Payload>[] payload() default {};
+   }
+
+   @Component
+   public class SafeHtmlValidator implements ConstraintValidator<SafeHtml, String> {
+
+       private static final Pattern DANGEROUS_PATTERNS = Pattern.compile(
+           "<script|javascript:|on\\w+\\s*=|<iframe|<object|<embed",
+           Pattern.CASE_INSENSITIVE
+       );
+
+       @Override
+       public boolean isValid(String value, ConstraintValidatorContext context) {
+           if (value == null) return true;
+           return !DANGEROUS_PATTERNS.matcher(value).find();
+       }
+   }
+   ```
+
+4. XSS 필터링 유틸리티
+   ```java
+   @Component
+   public class XssFilter {
+
+       private static final PolicyFactory POLICY = new HtmlPolicyBuilder()
+           .allowElements("b", "i", "u", "strong", "em", "p", "br", "ul", "ol", "li")
+           .allowUrlProtocols("https")
+           .toFactory();
+
+       /**
+        * HTML 태그 완전 제거
+        */
+       public String stripHtml(String input) {
+           if (input == null) return null;
+           return Jsoup.clean(input, Safelist.none());
+       }
+
+       /**
+        * 안전한 HTML만 허용
+        */
+       public String sanitizeHtml(String input) {
+           if (input == null) return null;
+           return POLICY.sanitize(input);
+       }
+
+       /**
+        * 특수문자 이스케이프
+        */
+       public String escapeHtml(String input) {
+           if (input == null) return null;
+           return HtmlUtils.htmlEscape(input);
+       }
+   }
+   ```
+
+5. SQL Injection 방지 확인
+   ```java
+   // JPA Repository - 파라미터 바인딩 사용 (안전)
+   @Query("SELECT a FROM Agent a WHERE a.name LIKE %:keyword%")
+   List<Agent> searchByName(@Param("keyword") String keyword);
+
+   // 절대 금지 - 문자열 연결
+   // @Query("SELECT a FROM Agent a WHERE a.name LIKE '%" + keyword + "%'")
+   ```
+
+6. CORS 설정
+   ```java
+   @Configuration
+   public class CorsConfig {
+
+       @Bean
+       public CorsConfigurationSource corsConfigurationSource() {
+           CorsConfiguration config = new CorsConfiguration();
+           config.setAllowedOrigins(List.of(
+               "http://localhost:3000",
+               "https://your-domain.com"
+           ));
+           config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+           config.setAllowedHeaders(List.of("*"));
+           config.setAllowCredentials(true);
+           config.setMaxAge(3600L);
+
+           UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+           source.registerCorsConfiguration("/**", config);
+           return source;
+       }
+   }
+   ```
+
+7. Security Headers 설정
+   ```java
+   @Configuration
+   public class SecurityHeadersConfig {
+
+       @Bean
+       public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+           http
+               .headers(headers -> headers
+                   // XSS 보호
+                   .xssProtection(xss -> xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK))
+                   // Content Type 스니핑 방지
+                   .contentTypeOptions(Customizer.withDefaults())
+                   // Clickjacking 방지
+                   .frameOptions(frame -> frame.deny())
+                   // Content Security Policy
+                   .contentSecurityPolicy(csp -> csp
+                       .policyDirectives("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"))
+                   // HSTS (HTTPS 강제)
+                   .httpStrictTransportSecurity(hsts -> hsts
+                       .includeSubDomains(true)
+                       .maxAgeInSeconds(31536000))
+               );
+
+           return http.build();
+       }
+   }
+   ```
+
+8. 입력 길이 제한
+   ```java
+   @Component
+   public class RequestSizeLimitFilter extends OncePerRequestFilter {
+
+       private static final int MAX_REQUEST_SIZE = 10 * 1024 * 1024;  // 10MB
+
+       @Override
+       protected void doFilterInternal(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        FilterChain filterChain) throws ServletException, IOException {
+
+           if (request.getContentLengthLong() > MAX_REQUEST_SIZE) {
+               response.setStatus(HttpStatus.PAYLOAD_TOO_LARGE.value());
+               response.getWriter().write("{\"error\": \"Request body too large\"}");
+               return;
+           }
+
+           filterChain.doFilter(request, response);
+       }
+   }
+   ```
+
+9. Global Exception Handler 보안
+   ```java
+   @RestControllerAdvice
+   public class GlobalExceptionHandler {
+
+       @ExceptionHandler(MethodArgumentNotValidException.class)
+       public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+           Map<String, String> errors = new HashMap<>();
+           ex.getBindingResult().getFieldErrors().forEach(error ->
+               errors.put(error.getField(), error.getDefaultMessage())
+           );
+
+           return ResponseEntity.badRequest().body(ErrorResponse.builder()
+               .error("validation_error")
+               .message("입력값이 올바르지 않습니다")
+               .details(errors)
+               .build());
+       }
+
+       @ExceptionHandler(Exception.class)
+       public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
+           // 프로덕션에서는 상세 에러 메시지 숨김
+           log.error("Unhandled exception", ex);
+
+           return ResponseEntity.internalServerError().body(ErrorResponse.builder()
+               .error("internal_error")
+               .message("서버 오류가 발생했습니다")
+               // 스택트레이스 노출 금지
+               .build());
+       }
+   }
+   ```
+
+10. 보안 체크리스트
+    ```markdown
+    [ ] 모든 사용자 입력에 @Valid 적용
+    [ ] HTML 입력 필드에 XSS 필터링
+    [ ] 파일 업로드 확장자/MIME 타입 검증
+    [ ] SQL 쿼리 파라미터 바인딩 사용
+    [ ] 비밀번호 BCrypt 해싱
+    [ ] API 키 해싱 저장
+    [ ] CORS 허용 도메인 제한
+    [ ] 보안 헤더 설정
+    [ ] 에러 메시지에 민감 정보 미포함
+    [ ] Rate Limiting 적용
+    ```
+
+[테스트 기준]
+- [ ] XSS 페이로드 입력 시 필터링/거부
+- [ ] SQL 인젝션 시도 실패
+- [ ] 유효하지 않은 입력 시 400 에러
+- [ ] 보안 헤더 응답 확인
+- [ ] CORS 정책 동작 확인
+- [ ] 에러 응답에 스택트레이스 미포함
+
+[참고 자료]
+- OWASP Top 10: https://owasp.org/www-project-top-ten/
+- Spring Security: https://docs.spring.io/spring-security/reference/

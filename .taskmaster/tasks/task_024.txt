@@ -1,0 +1,331 @@
+================================================================================
+TASK #024: 지식 관리 UI 페이지 구현
+================================================================================
+
+[기본 정보]
+- ID: 24
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #6 (인증 UI), Task #18 (지식 베이스 관리 API)
+
+[설명]
+지식 베이스 목록, 생성/편집, 파일 업로드 UI 구현
+
+[상세 구현 가이드]
+1. 페이지 및 컴포넌트 구조
+   ```
+   src/pages/
+   ├── KnowledgePage.tsx
+   └── KnowledgeDetailPage.tsx
+
+   src/components/knowledge/
+   ├── KnowledgeBaseList.tsx
+   ├── KnowledgeBaseCard.tsx
+   ├── KnowledgeBaseModal.tsx
+   ├── DocumentList.tsx
+   ├── DocumentUploader.tsx
+   ├── ChunkingSettings.tsx
+   └── SearchTestPanel.tsx
+   ```
+
+2. 지식 관리 페이지 (/knowledge)
+   ```tsx
+   export function KnowledgePage() {
+     const { data: knowledgeBases, isLoading } = useKnowledgeBases();
+     const [isModalOpen, setIsModalOpen] = useState(false);
+
+     return (
+       <div className="p-6">
+         <header className="flex justify-between items-center mb-6">
+           <div>
+             <h1 className="text-2xl font-bold">지식 관리</h1>
+             <p className="text-gray-500">문서를 업로드하여 에이전트의 지식을 확장하세요</p>
+           </div>
+           <Button onClick={() => setIsModalOpen(true)}>+ 지식 베이스 추가</Button>
+         </header>
+
+         <div className="grid grid-cols-3 gap-6">
+           {knowledgeBases?.map(kb => (
+             <KnowledgeBaseCard key={kb.id} knowledgeBase={kb} />
+           ))}
+         </div>
+
+         <KnowledgeBaseModal
+           isOpen={isModalOpen}
+           onClose={() => setIsModalOpen(false)}
+         />
+       </div>
+     );
+   }
+   ```
+
+3. KnowledgeBaseCard 컴포넌트
+   ```tsx
+   export function KnowledgeBaseCard({ knowledgeBase }: Props) {
+     const navigate = useNavigate();
+     const deleteKb = useDeleteKnowledgeBase();
+
+     return (
+       <div
+         className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 cursor-pointer hover:shadow-md transition-shadow"
+         onClick={() => navigate(`/knowledge/${knowledgeBase.id}`)}
+       >
+         <div className="flex justify-between items-start mb-3">
+           <div>
+             <h3 className="font-semibold text-lg">{knowledgeBase.name}</h3>
+             <p className="text-sm text-gray-500 mt-1">{knowledgeBase.description}</p>
+           </div>
+           <DropdownMenu onClick={e => e.stopPropagation()}>
+             <DropdownItem onClick={() => navigate(`/knowledge/${knowledgeBase.id}`)}>
+               상세 보기
+             </DropdownItem>
+             <DropdownItem onClick={() => deleteKb.mutate(knowledgeBase.id)} variant="danger">
+               삭제
+             </DropdownItem>
+           </DropdownMenu>
+         </div>
+
+         <div className="grid grid-cols-3 gap-2 text-center border-t pt-3 mt-3">
+           <div>
+             <p className="text-2xl font-bold">{knowledgeBase.documentCount}</p>
+             <p className="text-xs text-gray-500">문서</p>
+           </div>
+           <div>
+             <p className="text-2xl font-bold">{knowledgeBase.totalChunks}</p>
+             <p className="text-xs text-gray-500">청크</p>
+           </div>
+           <div>
+             <p className="text-2xl font-bold">{formatBytes(knowledgeBase.totalSize)}</p>
+             <p className="text-xs text-gray-500">용량</p>
+           </div>
+         </div>
+
+         <div className="mt-3 flex gap-2">
+           <Badge variant="outline">{knowledgeBase.embeddingModel}</Badge>
+           <Badge variant="outline">{knowledgeBase.chunkingStrategy}</Badge>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+4. 지식 베이스 상세 페이지 (/knowledge/:id)
+   ```tsx
+   export function KnowledgeDetailPage() {
+     const { id } = useParams();
+     const { data: knowledgeBase, isLoading } = useKnowledgeBase(id);
+     const [activeTab, setActiveTab] = useState('documents');
+
+     if (isLoading) return <LoadingSpinner />;
+
+     return (
+       <div className="p-6">
+         <header className="mb-6">
+           <Link to="/knowledge" className="text-sm text-gray-500 mb-2 inline-block">
+             ← 지식 관리로 돌아가기
+           </Link>
+           <h1 className="text-2xl font-bold">{knowledgeBase.name}</h1>
+           <p className="text-gray-500">{knowledgeBase.description}</p>
+         </header>
+
+         <Tabs
+           tabs={[
+             { id: 'documents', label: '문서' },
+             { id: 'settings', label: '설정' },
+             { id: 'search', label: '검색 테스트' },
+           ]}
+           activeTab={activeTab}
+           onChange={setActiveTab}
+         />
+
+         <div className="mt-6">
+           {activeTab === 'documents' && (
+             <DocumentsTab knowledgeBase={knowledgeBase} />
+           )}
+           {activeTab === 'settings' && (
+             <SettingsTab knowledgeBase={knowledgeBase} />
+           )}
+           {activeTab === 'search' && (
+             <SearchTestTab knowledgeBase={knowledgeBase} />
+           )}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+5. DocumentUploader (드래그앤드롭)
+   ```tsx
+   export function DocumentUploader({ knowledgeBaseId }: Props) {
+     const uploadDocuments = useUploadDocuments();
+     const [isDragging, setIsDragging] = useState(false);
+
+     const handleDrop = useCallback((e: React.DragEvent) => {
+       e.preventDefault();
+       setIsDragging(false);
+
+       const files = Array.from(e.dataTransfer.files);
+       uploadDocuments.mutate({ knowledgeBaseId, files });
+     }, [knowledgeBaseId]);
+
+     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+       const files = Array.from(e.target.files || []);
+       uploadDocuments.mutate({ knowledgeBaseId, files });
+     };
+
+     return (
+       <div
+         className={`
+           border-2 border-dashed rounded-lg p-8 text-center transition-colors
+           ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
+         `}
+         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+         onDragLeave={() => setIsDragging(false)}
+         onDrop={handleDrop}
+       >
+         <Upload className="mx-auto h-12 w-12 text-gray-400" />
+         <p className="mt-2 text-sm text-gray-600">
+           파일을 여기에 드래그하거나{' '}
+           <label className="text-blue-500 cursor-pointer hover:underline">
+             클릭하여 선택
+             <input
+               type="file"
+               multiple
+               accept=".pdf,.txt,.docx,.doc,.md,.csv,.json"
+               className="hidden"
+               onChange={handleFileSelect}
+             />
+           </label>
+         </p>
+         <p className="text-xs text-gray-400 mt-1">
+           PDF, TXT, DOCX, MD, CSV, JSON (최대 50MB)
+         </p>
+
+         {uploadDocuments.isPending && (
+           <div className="mt-4">
+             <Spinner /> 업로드 중...
+           </div>
+         )}
+       </div>
+     );
+   }
+   ```
+
+6. DocumentList 컴포넌트
+   ```tsx
+   export function DocumentList({ knowledgeBaseId }: Props) {
+     const { data: documents, isLoading } = useDocuments(knowledgeBaseId);
+     const deleteDocument = useDeleteDocument();
+
+     return (
+       <div className="mt-6">
+         <h3 className="font-medium mb-4">업로드된 문서 ({documents?.length || 0})</h3>
+
+         <table className="w-full">
+           <thead>
+             <tr className="text-left border-b">
+               <th className="pb-2">파일명</th>
+               <th className="pb-2">크기</th>
+               <th className="pb-2">청크</th>
+               <th className="pb-2">상태</th>
+               <th className="pb-2"></th>
+             </tr>
+           </thead>
+           <tbody>
+             {documents?.map(doc => (
+               <tr key={doc.id} className="border-b">
+                 <td className="py-3">{doc.filename}</td>
+                 <td className="py-3 text-gray-500">{formatBytes(doc.fileSize)}</td>
+                 <td className="py-3">{doc.chunkCount || '-'}</td>
+                 <td className="py-3">
+                   <DocumentStatusBadge status={doc.status} progress={doc.progress} />
+                 </td>
+                 <td className="py-3">
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={() => deleteDocument.mutate({ knowledgeBaseId, docId: doc.id })}
+                   >
+                     삭제
+                   </Button>
+                 </td>
+               </tr>
+             ))}
+           </tbody>
+         </table>
+       </div>
+     );
+   }
+
+   function DocumentStatusBadge({ status, progress }: Props) {
+     const config = {
+       PENDING: { label: '대기중', variant: 'default' },
+       PROCESSING: { label: `처리중 ${progress}%`, variant: 'warning' },
+       COMPLETED: { label: '완료', variant: 'success' },
+       FAILED: { label: '실패', variant: 'error' },
+     };
+
+     const { label, variant } = config[status];
+     return <Badge variant={variant}>{label}</Badge>;
+   }
+   ```
+
+7. SearchTestPanel 컴포넌트
+   ```tsx
+   export function SearchTestPanel({ knowledgeBase }: Props) {
+     const [query, setQuery] = useState('');
+     const [results, setResults] = useState<SearchResult[]>([]);
+     const searchMutation = useSearchKnowledgeBase();
+
+     const handleSearch = () => {
+       if (!query.trim()) return;
+       searchMutation.mutate(
+         { knowledgeBaseId: knowledgeBase.id, query },
+         { onSuccess: (data) => setResults(data.results) }
+       );
+     };
+
+     return (
+       <div>
+         <div className="flex gap-2 mb-6">
+           <Input
+             placeholder="검색어를 입력하세요..."
+             value={query}
+             onChange={(e) => setQuery(e.target.value)}
+             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+           />
+           <Button onClick={handleSearch} disabled={searchMutation.isPending}>
+             검색
+           </Button>
+         </div>
+
+         {results.length > 0 && (
+           <div className="space-y-4">
+             <p className="text-sm text-gray-500">{results.length}개 결과</p>
+             {results.map((result, idx) => (
+               <div key={idx} className="border rounded-lg p-4">
+                 <div className="flex justify-between mb-2">
+                   <Badge>유사도: {(result.score * 100).toFixed(1)}%</Badge>
+                 </div>
+                 <p className="text-sm">{result.content}</p>
+               </div>
+             ))}
+           </div>
+         )}
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 지식 베이스 목록 카드 표시
+- [ ] 지식 베이스 생성 모달 동작
+- [ ] 상세 페이지 접근 및 탭 전환
+- [ ] 드래그앤드롭 파일 업로드
+- [ ] 문서 목록 및 상태 표시
+- [ ] 문서 삭제 동작
+- [ ] 검색 테스트 → 결과 표시
+
+[참고 자료]
+- React Dropzone: https://react-dropzone.js.org/

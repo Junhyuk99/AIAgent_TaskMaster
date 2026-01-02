@@ -1,0 +1,275 @@
+================================================================================
+TASK #033: Rate Limiting 구현
+================================================================================
+
+[기본 정보]
+- ID: 33
+- 우선순위: medium
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템)
+
+[설명]
+API 요청 제한 구현 (IP 기반, API 키 기반)
+
+[상세 구현 가이드]
+1. 의존성 추가
+   ```gradle
+   implementation 'com.bucket4j:bucket4j-core:8.7.0'
+   // Redis 사용 시
+   implementation 'com.bucket4j:bucket4j-redis:8.7.0'
+   ```
+
+2. Rate Limit 설정
+   ```yaml
+   # application.yml
+   rate-limit:
+     enabled: true
+     # 익명 사용자 (IP 기반)
+     anonymous:
+       requests-per-minute: 10
+       requests-per-hour: 100
+     # 인증된 사용자
+     authenticated:
+       requests-per-minute: 60
+       requests-per-hour: 1000
+     # API 키
+     api-key:
+       requests-per-minute: 120
+       requests-per-hour: 5000
+   ```
+
+3. RateLimitConfig
+   ```java
+   @Configuration
+   @ConfigurationProperties(prefix = "rate-limit")
+   @Data
+   public class RateLimitConfig {
+       private boolean enabled = true;
+       private LimitConfig anonymous;
+       private LimitConfig authenticated;
+       private LimitConfig apiKey;
+
+       @Data
+       public static class LimitConfig {
+           private int requestsPerMinute;
+           private int requestsPerHour;
+       }
+   }
+   ```
+
+4. RateLimiterService
+   ```java
+   @Service
+   public class RateLimiterService {
+
+       private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+       private final RateLimitConfig config;
+
+       /**
+        * IP 기반 제한 (익명 사용자)
+        */
+       public Bucket resolveBucketForIp(String ip) {
+           return buckets.computeIfAbsent("ip:" + ip, key -> createBucket(
+               config.getAnonymous().getRequestsPerMinute(),
+               config.getAnonymous().getRequestsPerHour()
+           ));
+       }
+
+       /**
+        * 사용자 기반 제한 (인증된 사용자)
+        */
+       public Bucket resolveBucketForUser(Long userId) {
+           return buckets.computeIfAbsent("user:" + userId, key -> createBucket(
+               config.getAuthenticated().getRequestsPerMinute(),
+               config.getAuthenticated().getRequestsPerHour()
+           ));
+       }
+
+       /**
+        * API 키 기반 제한
+        */
+       public Bucket resolveBucketForApiKey(Long apiKeyId) {
+           return buckets.computeIfAbsent("apikey:" + apiKeyId, key -> createBucket(
+               config.getApiKey().getRequestsPerMinute(),
+               config.getApiKey().getRequestsPerHour()
+           ));
+       }
+
+       private Bucket createBucket(int perMinute, int perHour) {
+           Bandwidth minuteLimit = Bandwidth.classic(
+               perMinute,
+               Refill.intervally(perMinute, Duration.ofMinutes(1))
+           );
+
+           Bandwidth hourLimit = Bandwidth.classic(
+               perHour,
+               Refill.intervally(perHour, Duration.ofHours(1))
+           );
+
+           return Bucket.builder()
+               .addLimit(minuteLimit)
+               .addLimit(hourLimit)
+               .build();
+       }
+
+       /**
+        * 요청 소비 시도
+        * @return 남은 토큰 수 (0 이하면 제한 초과)
+        */
+       public RateLimitResult tryConsume(Bucket bucket) {
+           ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+
+           return RateLimitResult.builder()
+               .allowed(probe.isConsumed())
+               .remainingTokens(probe.getRemainingTokens())
+               .waitTimeMillis(probe.getNanosToWaitForRefill() / 1_000_000)
+               .build();
+       }
+   }
+
+   @Data
+   @Builder
+   public class RateLimitResult {
+       private boolean allowed;
+       private long remainingTokens;
+       private long waitTimeMillis;
+   }
+   ```
+
+5. RateLimitFilter
+   ```java
+   @Component
+   @Order(Ordered.HIGHEST_PRECEDENCE)
+   public class RateLimitFilter extends OncePerRequestFilter {
+
+       private final RateLimiterService rateLimiterService;
+       private final RateLimitConfig config;
+
+       @Override
+       protected void doFilterInternal(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        FilterChain filterChain) throws ServletException, IOException {
+
+           if (!config.isEnabled()) {
+               filterChain.doFilter(request, response);
+               return;
+           }
+
+           // Rate Limit 대상 결정
+           Bucket bucket = resolveBucket(request);
+           RateLimitResult result = rateLimiterService.tryConsume(bucket);
+
+           // 응답 헤더에 Rate Limit 정보 추가
+           response.setHeader("X-RateLimit-Remaining", String.valueOf(result.getRemainingTokens()));
+
+           if (!result.isAllowed()) {
+               response.setHeader("X-RateLimit-Retry-After", String.valueOf(result.getWaitTimeMillis() / 1000));
+               response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+               response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+               response.getWriter().write("""
+                   {
+                       "error": "rate_limit_exceeded",
+                       "message": "Too many requests. Please try again later.",
+                       "retryAfter": %d
+                   }
+                   """.formatted(result.getWaitTimeMillis() / 1000));
+               return;
+           }
+
+           filterChain.doFilter(request, response);
+       }
+
+       private Bucket resolveBucket(HttpServletRequest request) {
+           // 1. API 키 확인
+           String apiKey = request.getHeader("X-API-Key");
+           if (apiKey != null) {
+               Long apiKeyId = extractApiKeyId(apiKey);
+               if (apiKeyId != null) {
+                   return rateLimiterService.resolveBucketForApiKey(apiKeyId);
+               }
+           }
+
+           // 2. JWT 토큰 확인 (인증된 사용자)
+           Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+           if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+               Long userId = ((UserPrincipal) auth.getPrincipal()).getId();
+               return rateLimiterService.resolveBucketForUser(userId);
+           }
+
+           // 3. IP 기반 (익명 사용자)
+           String clientIp = getClientIp(request);
+           return rateLimiterService.resolveBucketForIp(clientIp);
+       }
+
+       private String getClientIp(HttpServletRequest request) {
+           String xForwardedFor = request.getHeader("X-Forwarded-For");
+           if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+               return xForwardedFor.split(",")[0].trim();
+           }
+           return request.getRemoteAddr();
+       }
+   }
+   ```
+
+6. Redis 기반 분산 Rate Limiting (확장)
+   ```java
+   @Service
+   @Profile("distributed")
+   public class RedisRateLimiterService implements RateLimiterService {
+
+       private final RedissonClient redissonClient;
+       private final RateLimitConfig config;
+
+       @Override
+       public Bucket resolveBucketForIp(String ip) {
+           return Bucket4j.extension(RedissonClient.class)
+               .builder()
+               .addLimit(createBandwidth(config.getAnonymous()))
+               .build(redissonClient, "rate-limit:ip:" + ip, RecoveryStrategy.RECONSTRUCT);
+       }
+
+       // ... 나머지 메서드
+   }
+   ```
+
+7. 특정 엔드포인트 제외
+   ```java
+   @Override
+   protected boolean shouldNotFilter(HttpServletRequest request) {
+       String path = request.getRequestURI();
+       return path.startsWith("/swagger-ui") ||
+              path.startsWith("/api-docs") ||
+              path.startsWith("/actuator");
+   }
+   ```
+
+8. 어노테이션 기반 Rate Limit (옵션)
+   ```java
+   @Target(ElementType.METHOD)
+   @Retention(RetentionPolicy.RUNTIME)
+   public @interface RateLimit {
+       int requests() default 60;
+       int seconds() default 60;
+   }
+
+   // 사용 예
+   @RateLimit(requests = 10, seconds = 60)
+   @PostMapping("/expensive-operation")
+   public ResponseEntity<?> expensiveOperation() {
+       // ...
+   }
+   ```
+
+[테스트 기준]
+- [ ] 익명 사용자 요청 제한 동작
+- [ ] 인증된 사용자 요청 제한 동작
+- [ ] API 키 기반 요청 제한 동작
+- [ ] 제한 초과 시 429 응답
+- [ ] X-RateLimit-* 헤더 포함
+- [ ] X-RateLimit-Retry-After 헤더 정확성
+- [ ] 시간 경과 후 요청 허용
+
+[참고 자료]
+- Bucket4j: https://bucket4j.com/
+- Rate Limiting Patterns: https://cloud.google.com/architecture/rate-limiting-strategies-techniques

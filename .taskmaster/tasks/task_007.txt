@@ -1,0 +1,155 @@
+================================================================================
+TASK #007: LLM 서버 관리 API 구현
+================================================================================
+
+[기본 정보]
+- ID: 7
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #4 (JWT 기반 인증 시스템)
+
+[설명]
+LLM 서버 CRUD API, 연결 테스트, 모델 목록 조회 기능 구현
+
+[상세 구현 가이드]
+1. 계층 구조 생성
+   ```
+   src/main/java/com/aiagent/
+   ├── controller/LlmServerController.java
+   ├── service/LlmServerService.java
+   ├── repository/LlmServerRepository.java
+   ├── dto/
+   │   ├── LlmServerRequest.java
+   │   ├── LlmServerResponse.java
+   │   └── ModelListResponse.java
+   └── connector/
+       ├── LlmConnector.java (인터페이스)
+       ├── OllamaConnector.java
+       ├── VllmConnector.java
+       └── CustomConnector.java
+   ```
+
+2. LlmServerController API
+   ```java
+   @RestController
+   @RequestMapping("/api/llm-servers")
+   public class LlmServerController {
+
+       @GetMapping
+       public List<LlmServerResponse> getServers();
+
+       @PostMapping
+       public LlmServerResponse createServer(@RequestBody LlmServerRequest req);
+
+       @GetMapping("/{id}")
+       public LlmServerResponse getServer(@PathVariable Long id);
+
+       @PutMapping("/{id}")
+       public LlmServerResponse updateServer(@PathVariable Long id,
+                                             @RequestBody LlmServerRequest req);
+
+       @DeleteMapping("/{id}")
+       public void deleteServer(@PathVariable Long id);
+
+       @PostMapping("/{id}/test")
+       public ConnectionTestResult testConnection(@PathVariable Long id);
+
+       @GetMapping("/{id}/models")
+       public List<ModelInfo> getModels(@PathVariable Long id);
+   }
+   ```
+
+3. LlmConnector 인터페이스
+   ```java
+   public interface LlmConnector {
+       boolean testConnection();
+       List<ModelInfo> listModels();
+       ChatResponse chat(ChatRequest request);
+       // 스트리밍은 별도 메서드
+       Flux<String> chatStream(ChatRequest request);
+   }
+   ```
+
+4. LlmConnectorFactory
+   ```java
+   @Component
+   public class LlmConnectorFactory {
+       public LlmConnector getConnector(LlmServer server) {
+           return switch (server.getType()) {
+               case OLLAMA -> new OllamaConnector(server);
+               case VLLM -> new VllmConnector(server);
+               case LOCAL_AI -> new LocalAiConnector(server);
+               case CUSTOM -> new CustomConnector(server);
+           };
+       }
+   }
+   ```
+
+5. 인증 토큰 암호화
+   ```java
+   @Component
+   public class EncryptionService {
+       private final String secretKey;  // application.yml에서 주입
+
+       public String encrypt(String plainText);
+       public String decrypt(String encryptedText);
+   }
+   ```
+
+6. DTO 정의
+   ```java
+   // LlmServerRequest
+   @Data
+   public class LlmServerRequest {
+       @NotBlank
+       private String name;
+
+       @NotNull
+       private LlmServerType type;  // OLLAMA, VLLM, LOCAL_AI, CUSTOM
+
+       @NotBlank
+       private String baseUrl;
+
+       private String authToken;  // 옵션
+   }
+
+   // LlmServerResponse
+   @Data
+   public class LlmServerResponse {
+       private Long id;
+       private String name;
+       private LlmServerType type;
+       private String baseUrl;
+       private Boolean isActive;
+       private LocalDateTime createdAt;
+       // authToken은 응답에 포함하지 않음
+   }
+   ```
+
+7. 연결 테스트 로직
+   ```java
+   public ConnectionTestResult testConnection(Long id) {
+       LlmServer server = repository.findById(id).orElseThrow();
+       LlmConnector connector = connectorFactory.getConnector(server);
+
+       try {
+           boolean success = connector.testConnection();
+           return new ConnectionTestResult(success, null);
+       } catch (Exception e) {
+           return new ConnectionTestResult(false, e.getMessage());
+       }
+   }
+   ```
+
+[테스트 기준]
+- [ ] LLM 서버 CRUD 전체 동작 확인
+- [ ] 인증 토큰 암호화 저장 확인 (DB에서 평문 아님)
+- [ ] 연결 테스트 API 동작 확인 (성공/실패 케이스)
+- [ ] 모델 목록 조회 API 동작 확인
+- [ ] 타입별 커넥터 정상 생성 확인
+- [ ] 권한 없는 사용자의 다른 사용자 서버 접근 차단
+
+[참고 자료]
+- Ollama API: https://github.com/ollama/ollama/blob/main/docs/api.md
+- Spring WebClient: https://docs.spring.io/spring-framework/reference/web/webflux-webclient.html

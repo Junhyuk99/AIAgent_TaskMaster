@@ -1,0 +1,110 @@
+================================================================================
+TASK #003: PostgreSQL 데이터베이스 설정 및 JPA Entity 생성
+================================================================================
+
+[기본 정보]
+- ID: 3
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #1 (Spring Boot 프로젝트 초기 설정)
+
+[설명]
+PostgreSQL 연결 설정, 데이터 모델에 따른 JPA Entity 클래스 생성
+(User, Agent, Function, KnowledgeBase, Document, LlmServer 등)
+
+[상세 구현 가이드]
+1. PostgreSQL 데이터베이스 생성
+   ```sql
+   CREATE DATABASE aiagent;
+   CREATE USER aiagent_user WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE aiagent TO aiagent_user;
+   ```
+
+2. application.yml 데이터베이스 설정
+   ```yaml
+   spring:
+     datasource:
+       url: jdbc:postgresql://localhost:5432/aiagent
+       username: ${DB_USERNAME:aiagent_user}
+       password: ${DB_PASSWORD:your_password}
+       driver-class-name: org.postgresql.Driver
+     jpa:
+       hibernate:
+         ddl-auto: update
+       properties:
+         hibernate:
+           dialect: org.hibernate.dialect.PostgreSQLDialect
+           format_sql: true
+       show-sql: true
+   ```
+
+3. BaseEntity 추상 클래스 생성
+   ```java
+   @MappedSuperclass
+   @EntityListeners(AuditingEntityListener.class)
+   public abstract class BaseEntity {
+       @CreatedDate
+       private LocalDateTime createdAt;
+
+       @LastModifiedDate
+       private LocalDateTime updatedAt;
+   }
+   ```
+
+4. JPA Entity 생성 (PRD 데이터 모델 기반)
+
+   4.1 User 엔티티
+   - id, email (unique), passwordHash, name, createdAt, updatedAt
+
+   4.2 LlmServer 엔티티
+   - id, userId (FK), name, type (OLLAMA/VLLM/LOCAL_AI/CUSTOM)
+   - baseUrl, authToken (encrypted), isActive, createdAt
+
+   4.3 Agent 엔티티
+   - id, userId (FK), name, description, systemPrompt
+   - llmServerId (FK), modelName, temperature, maxTokens
+   - createdAt, updatedAt
+
+   4.4 Function 엔티티
+   - id, userId (FK), name, description
+   - parameters (JSON), returnType
+   - implementationType (HTTP_API/CODE/TEMPLATE)
+   - implementation (JSON), createdAt, updatedAt
+
+   4.5 KnowledgeBase 엔티티
+   - id, userId (FK), name, description
+   - embeddingModel, chunkSize, chunkOverlap
+   - createdAt, updatedAt
+
+   4.6 Document 엔티티
+   - id, knowledgeBaseId (FK), filename, filePath
+   - fileSize, mimeType, chunkCount
+   - status (PENDING/PROCESSING/COMPLETED/FAILED)
+   - errorMessage, createdAt
+
+5. 연결 테이블 (ManyToMany)
+   - AgentFunction: agentId, functionId
+   - AgentKnowledgeBase: agentId, knowledgeBaseId
+
+6. JPA Auditing 활성화
+   ```java
+   @Configuration
+   @EnableJpaAuditing
+   public class JpaConfig {
+   }
+   ```
+
+7. Repository 인터페이스 생성
+   - UserRepository, AgentRepository, FunctionRepository 등
+
+[테스트 기준]
+- [ ] 애플리케이션 기동 시 테이블 자동 생성 확인
+- [ ] 각 테이블 컬럼 및 제약조건 확인 (psql 또는 pgAdmin)
+- [ ] 연관관계 매핑 정상 동작 확인
+- [ ] Repository 기본 CRUD 단위 테스트 통과
+- [ ] createdAt, updatedAt 자동 갱신 확인
+
+[참고 자료]
+- Spring Data JPA: https://docs.spring.io/spring-data/jpa/docs/current/reference/html/
+- Hibernate ORM: https://hibernate.org/orm/documentation/

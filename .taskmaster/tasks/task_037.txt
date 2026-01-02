@@ -1,0 +1,379 @@
+================================================================================
+TASK #037: 함수 테스트 및 디버깅 기능 강화
+================================================================================
+
+[기본 정보]
+- ID: 37
+- 우선순위: medium
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #14 (함수 관리 UI 페이지), Task #15 (HTTP API 방식 함수)
+
+[설명]
+함수 테스트 패널 UI, 입력/출력 로깅, 디버깅 도구
+
+[상세 구현 가이드]
+1. FunctionTestController API 확장
+   ```java
+   @RestController
+   @RequestMapping("/api/functions")
+   public class FunctionTestController {
+
+       @PostMapping("/{id}/test")
+       public FunctionTestResponse testFunction(@PathVariable Long id,
+                                                 @RequestBody FunctionTestRequest request);
+
+       @GetMapping("/{id}/test-history")
+       public List<FunctionTestHistory> getTestHistory(@PathVariable Long id,
+                                                        @RequestParam(defaultValue = "10") int limit);
+
+       @GetMapping("/{id}/test-history/{testId}")
+       public FunctionTestDetail getTestDetail(@PathVariable Long id,
+                                                @PathVariable Long testId);
+   }
+   ```
+
+2. FunctionTestHistory 엔티티
+   ```java
+   @Entity
+   public class FunctionTestHistory {
+       @Id @GeneratedValue
+       private Long id;
+
+       @ManyToOne
+       private Function function;
+
+       @Column(columnDefinition = "JSON")
+       private String inputParameters;
+
+       @Column(columnDefinition = "TEXT")
+       private String outputResult;
+
+       private Boolean success;
+       private String errorMessage;
+       private String errorStackTrace;
+
+       private Long executionTimeMs;
+
+       // HTTP API 함수의 경우
+       private String httpMethod;
+       private String httpUrl;
+
+       @Column(columnDefinition = "JSON")
+       private String httpRequestHeaders;
+
+       @Column(columnDefinition = "TEXT")
+       private String httpRequestBody;
+
+       private Integer httpResponseStatus;
+
+       @Column(columnDefinition = "JSON")
+       private String httpResponseHeaders;
+
+       @Column(columnDefinition = "TEXT")
+       private String httpResponseBody;
+
+       private LocalDateTime createdAt;
+   }
+   ```
+
+3. FunctionTestService 확장
+   ```java
+   @Service
+   public class FunctionTestService {
+
+       public FunctionTestResponse testFunction(Long id, FunctionTestRequest request, Long userId) {
+           Function function = functionService.getFunctionWithOwnerCheck(id, userId);
+
+           FunctionTestHistory history = FunctionTestHistory.builder()
+               .function(function)
+               .inputParameters(toJson(request.getParameters()))
+               .createdAt(LocalDateTime.now())
+               .build();
+
+           long startTime = System.currentTimeMillis();
+
+           try {
+               FunctionExecutor executor = executorFactory.getExecutor(function.getImplementationType());
+
+               // HTTP API 함수인 경우 상세 로깅
+               if (executor instanceof HttpApiFunctionExecutor httpExecutor) {
+                   HttpExecutionContext context = httpExecutor.executeWithContext(
+                       function, request.getParameters());
+
+                   history.setHttpMethod(context.getMethod());
+                   history.setHttpUrl(context.getUrl());
+                   history.setHttpRequestHeaders(toJson(context.getRequestHeaders()));
+                   history.setHttpRequestBody(context.getRequestBody());
+                   history.setHttpResponseStatus(context.getResponseStatus());
+                   history.setHttpResponseHeaders(toJson(context.getResponseHeaders()));
+                   history.setHttpResponseBody(context.getResponseBody());
+                   history.setOutputResult(toJson(context.getResult()));
+                   history.setSuccess(true);
+               } else {
+                   Object result = executor.execute(function, request.getParameters());
+                   history.setOutputResult(toJson(result));
+                   history.setSuccess(true);
+               }
+
+           } catch (Exception e) {
+               history.setSuccess(false);
+               history.setErrorMessage(e.getMessage());
+               history.setErrorStackTrace(getStackTrace(e));
+           }
+
+           history.setExecutionTimeMs(System.currentTimeMillis() - startTime);
+           testHistoryRepository.save(history);
+
+           return toResponse(history);
+       }
+   }
+   ```
+
+4. HttpApiFunctionExecutor 컨텍스트 반환
+   ```java
+   public class HttpApiFunctionExecutor {
+
+       public HttpExecutionContext executeWithContext(Function function,
+                                                       Map<String, Object> parameters) {
+           HttpApiImplementation config = parseImplementation(function.getImplementation());
+
+           String url = processTemplate(config.getUrl(), parameters);
+           String body = processTemplate(config.getBody(), parameters);
+           Map<String, String> headers = processHeaders(config.getHeaders(), parameters);
+
+           HttpExecutionContext context = new HttpExecutionContext();
+           context.setMethod(config.getMethod());
+           context.setUrl(url);
+           context.setRequestHeaders(headers);
+           context.setRequestBody(body);
+
+           try {
+               ResponseEntity<String> response = webClient
+                   .method(HttpMethod.valueOf(config.getMethod()))
+                   .uri(url)
+                   .headers(h -> headers.forEach(h::add))
+                   .bodyValue(body != null ? body : "")
+                   .retrieve()
+                   .toEntity(String.class)
+                   .block();
+
+               context.setResponseStatus(response.getStatusCode().value());
+               context.setResponseHeaders(response.getHeaders().toSingleValueMap());
+               context.setResponseBody(response.getBody());
+
+               // 응답 매핑
+               if (config.getResponseMapping() != null) {
+                   context.setResult(extractWithJsonPath(response.getBody(), config.getResponseMapping()));
+               } else {
+                   context.setResult(response.getBody());
+               }
+
+           } catch (WebClientResponseException e) {
+               context.setResponseStatus(e.getStatusCode().value());
+               context.setResponseBody(e.getResponseBodyAsString());
+               throw e;
+           }
+
+           return context;
+       }
+   }
+   ```
+
+5. 프론트엔드 FunctionTestPanel
+   ```tsx
+   export function FunctionTestPanel({ function: func }: Props) {
+     const [parameters, setParameters] = useState<Record<string, any>>({});
+     const testFunction = useTestFunction();
+     const [result, setResult] = useState<FunctionTestResponse | null>(null);
+     const [activeTab, setActiveTab] = useState<'input' | 'output' | 'http'>('input');
+
+     // 파라미터 입력 폼 자동 생성
+     const renderParameterInput = (param: ParameterDefinition) => {
+       switch (param.type) {
+         case 'string':
+           return <Input {...} />;
+         case 'number':
+           return <Input type="number" {...} />;
+         case 'boolean':
+           return <Checkbox {...} />;
+         case 'object':
+           return <JsonEditor {...} />;
+         default:
+           return <Input {...} />;
+       }
+     };
+
+     const handleTest = async () => {
+       const response = await testFunction.mutateAsync({
+         functionId: func.id,
+         parameters,
+       });
+       setResult(response);
+     };
+
+     return (
+       <div className="grid grid-cols-2 gap-6">
+         {/* 입력 패널 */}
+         <div className="border rounded-lg p-4">
+           <h4 className="font-medium mb-4">입력 파라미터</h4>
+           <div className="space-y-4">
+             {func.parameters.map(param => (
+               <div key={param.name}>
+                 <label className="block text-sm font-medium mb-1">
+                   {param.name}
+                   {param.required && <span className="text-red-500">*</span>}
+                 </label>
+                 {renderParameterInput(param)}
+                 {param.description && (
+                   <p className="text-xs text-gray-400 mt-1">{param.description}</p>
+                 )}
+               </div>
+             ))}
+           </div>
+
+           <Button
+             className="w-full mt-4"
+             onClick={handleTest}
+             disabled={testFunction.isPending}
+           >
+             {testFunction.isPending ? '실행 중...' : '테스트 실행'}
+           </Button>
+         </div>
+
+         {/* 결과 패널 */}
+         <div className="border rounded-lg p-4">
+           <Tabs
+             tabs={[
+               { id: 'output', label: '결과' },
+               { id: 'http', label: 'HTTP 상세', disabled: func.implementationType !== 'HTTP_API' },
+             ]}
+             activeTab={activeTab}
+             onChange={setActiveTab}
+           />
+
+           {result && (
+             <div className="mt-4">
+               {/* 상태 및 시간 */}
+               <div className="flex justify-between mb-4">
+                 <Badge variant={result.success ? 'success' : 'error'}>
+                   {result.success ? '성공' : '실패'}
+                 </Badge>
+                 <span className="text-sm text-gray-500">
+                   {result.executionTimeMs}ms
+                 </span>
+               </div>
+
+               {activeTab === 'output' && (
+                 <div>
+                   {result.success ? (
+                     <pre className="bg-gray-100 p-4 rounded text-sm overflow-auto max-h-96">
+                       {JSON.stringify(result.outputResult, null, 2)}
+                     </pre>
+                   ) : (
+                     <div className="bg-red-50 p-4 rounded">
+                       <p className="text-red-600 font-medium">{result.errorMessage}</p>
+                       {result.errorStackTrace && (
+                         <details className="mt-2">
+                           <summary className="cursor-pointer text-sm">스택 트레이스</summary>
+                           <pre className="mt-2 text-xs overflow-auto">
+                             {result.errorStackTrace}
+                           </pre>
+                         </details>
+                       )}
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {activeTab === 'http' && result.httpUrl && (
+                 <HttpDebugView result={result} />
+               )}
+             </div>
+           )}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+6. HttpDebugView 컴포넌트
+   ```tsx
+   function HttpDebugView({ result }: Props) {
+     return (
+       <div className="space-y-4">
+         {/* 요청 */}
+         <div>
+           <h5 className="font-medium mb-2">요청</h5>
+           <div className="bg-gray-100 p-3 rounded text-sm">
+             <div className="font-mono">
+               {result.httpMethod} {result.httpUrl}
+             </div>
+             {result.httpRequestHeaders && (
+               <div className="mt-2 text-xs">
+                 {Object.entries(result.httpRequestHeaders).map(([k, v]) => (
+                   <div key={k}>{k}: {v}</div>
+                 ))}
+               </div>
+             )}
+             {result.httpRequestBody && (
+               <pre className="mt-2 text-xs">{result.httpRequestBody}</pre>
+             )}
+           </div>
+         </div>
+
+         {/* 응답 */}
+         <div>
+           <h5 className="font-medium mb-2">응답</h5>
+           <div className="bg-gray-100 p-3 rounded text-sm">
+             <Badge variant={result.httpResponseStatus < 400 ? 'success' : 'error'}>
+               {result.httpResponseStatus}
+             </Badge>
+             <pre className="mt-2 text-xs overflow-auto max-h-48">
+               {result.httpResponseBody}
+             </pre>
+           </div>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+7. 테스트 히스토리 목록
+   ```tsx
+   export function FunctionTestHistory({ functionId }: Props) {
+     const { data: history } = useFunctionTestHistory(functionId);
+
+     return (
+       <div>
+         <h4 className="font-medium mb-4">테스트 히스토리</h4>
+         <div className="space-y-2">
+           {history?.map(test => (
+             <div key={test.id} className="flex items-center justify-between p-2 border rounded">
+               <div className="flex items-center gap-3">
+                 <Badge variant={test.success ? 'success' : 'error'}>
+                   {test.success ? '성공' : '실패'}
+                 </Badge>
+                 <span className="text-sm">{test.executionTimeMs}ms</span>
+               </div>
+               <span className="text-sm text-gray-400">
+                 {formatRelativeTime(test.createdAt)}
+               </span>
+             </div>
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 파라미터 입력 폼 자동 생성
+- [ ] 함수 테스트 실행 및 결과 표시
+- [ ] HTTP 요청/응답 상세 정보 표시
+- [ ] 에러 발생 시 스택 트레이스 표시
+- [ ] 실행 시간 표시
+- [ ] 테스트 히스토리 저장 및 조회
+
+[참고 자료]
+- JSON Editor: https://github.com/josdejong/jsoneditor

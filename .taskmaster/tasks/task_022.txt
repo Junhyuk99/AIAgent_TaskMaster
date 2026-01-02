@@ -1,0 +1,324 @@
+================================================================================
+TASK #022: 벡터 DB 연동 구현
+================================================================================
+
+[기본 정보]
+- ID: 22
+- 우선순위: high
+- 복잡도: 7/10
+- 상태: pending
+- 의존성: Task #21 (청킹 및 임베딩 처리)
+
+[설명]
+Chroma 또는 Milvus 벡터 데이터베이스 연동, 벡터 저장/검색
+
+[상세 구현 가이드]
+1. VectorStore 인터페이스 (추상화)
+   ```java
+   public interface VectorStore {
+       void createCollection(String collectionName, int dimension);
+       void deleteCollection(String collectionName);
+       boolean collectionExists(String collectionName);
+
+       void upsert(String collectionName, List<TextChunk> chunks,
+                   List<float[]> embeddings, Long documentId);
+       void deleteByDocumentId(String collectionName, Long documentId);
+
+       List<SearchResult> search(String collectionName, float[] queryVector,
+                                  int topK, Double minScore);
+
+       long getDocumentCount(String collectionName);
+   }
+
+   @Data
+   @Builder
+   public class SearchResult {
+       private String id;
+       private String content;
+       private Double score;
+       private Map<String, Object> metadata;
+   }
+   ```
+
+2. Chroma VectorStore 구현
+   ```java
+   @Service
+   @ConditionalOnProperty(name = "vectorstore.type", havingValue = "chroma")
+   public class ChromaVectorStore implements VectorStore {
+
+       private final WebClient webClient;
+       private final ObjectMapper objectMapper;
+
+       public ChromaVectorStore(@Value("${vectorstore.chroma.url}") String baseUrl) {
+           this.webClient = WebClient.builder()
+               .baseUrl(baseUrl)
+               .build();
+       }
+
+       @Override
+       public void createCollection(String collectionName, int dimension) {
+           ChromaCreateCollectionRequest request = new ChromaCreateCollectionRequest();
+           request.setName(collectionName);
+           request.setMetadata(Map.of("dimension", dimension));
+
+           webClient.post()
+               .uri("/api/v1/collections")
+               .bodyValue(request)
+               .retrieve()
+               .bodyToMono(Void.class)
+               .block();
+       }
+
+       @Override
+       public void upsert(String collectionName, List<TextChunk> chunks,
+                          List<float[]> embeddings, Long documentId) {
+           String collectionId = getCollectionId(collectionName);
+
+           List<String> ids = new ArrayList<>();
+           List<List<Float>> embeddingsList = new ArrayList<>();
+           List<String> documents = new ArrayList<>();
+           List<Map<String, Object>> metadatas = new ArrayList<>();
+
+           for (int i = 0; i < chunks.size(); i++) {
+               TextChunk chunk = chunks.get(i);
+               ids.add(documentId + "_" + chunk.getIndex());
+               embeddingsList.add(toFloatList(embeddings.get(i)));
+               documents.add(chunk.getContent());
+               metadatas.add(Map.of(
+                   "documentId", documentId,
+                   "chunkIndex", chunk.getIndex(),
+                   "startOffset", chunk.getStartOffset(),
+                   "endOffset", chunk.getEndOffset()
+               ));
+           }
+
+           ChromaAddRequest request = new ChromaAddRequest();
+           request.setIds(ids);
+           request.setEmbeddings(embeddingsList);
+           request.setDocuments(documents);
+           request.setMetadatas(metadatas);
+
+           webClient.post()
+               .uri("/api/v1/collections/{id}/add", collectionId)
+               .bodyValue(request)
+               .retrieve()
+               .bodyToMono(Void.class)
+               .block();
+       }
+
+       @Override
+       public List<SearchResult> search(String collectionName, float[] queryVector,
+                                         int topK, Double minScore) {
+           String collectionId = getCollectionId(collectionName);
+
+           ChromaQueryRequest request = new ChromaQueryRequest();
+           request.setQueryEmbeddings(List.of(toFloatList(queryVector)));
+           request.setNResults(topK);
+           request.setInclude(List.of("documents", "metadatas", "distances"));
+
+           ChromaQueryResponse response = webClient.post()
+               .uri("/api/v1/collections/{id}/query", collectionId)
+               .bodyValue(request)
+               .retrieve()
+               .bodyToMono(ChromaQueryResponse.class)
+               .block();
+
+           return convertToSearchResults(response, minScore);
+       }
+
+       @Override
+       public void deleteByDocumentId(String collectionName, Long documentId) {
+           String collectionId = getCollectionId(collectionName);
+
+           ChromaDeleteRequest request = new ChromaDeleteRequest();
+           request.setWhere(Map.of("documentId", documentId));
+
+           webClient.post()
+               .uri("/api/v1/collections/{id}/delete", collectionId)
+               .bodyValue(request)
+               .retrieve()
+               .bodyToMono(Void.class)
+               .block();
+       }
+
+       private List<SearchResult> convertToSearchResults(ChromaQueryResponse response,
+                                                          Double minScore) {
+           List<SearchResult> results = new ArrayList<>();
+
+           List<String> ids = response.getIds().get(0);
+           List<String> documents = response.getDocuments().get(0);
+           List<Double> distances = response.getDistances().get(0);
+           List<Map<String, Object>> metadatas = response.getMetadatas().get(0);
+
+           for (int i = 0; i < ids.size(); i++) {
+               // Chroma는 distance 반환, score로 변환
+               double score = 1.0 - distances.get(i);
+
+               if (minScore != null && score < minScore) continue;
+
+               results.add(SearchResult.builder()
+                   .id(ids.get(i))
+                   .content(documents.get(i))
+                   .score(score)
+                   .metadata(metadatas.get(i))
+                   .build());
+           }
+
+           return results;
+       }
+   }
+   ```
+
+3. Milvus VectorStore 구현 (대안)
+   ```java
+   @Service
+   @ConditionalOnProperty(name = "vectorstore.type", havingValue = "milvus")
+   public class MilvusVectorStore implements VectorStore {
+
+       private final MilvusServiceClient client;
+
+       public MilvusVectorStore(@Value("${vectorstore.milvus.host}") String host,
+                                @Value("${vectorstore.milvus.port}") int port) {
+           this.client = new MilvusServiceClient(
+               ConnectParam.newBuilder()
+                   .withHost(host)
+                   .withPort(port)
+                   .build()
+           );
+       }
+
+       @Override
+       public void createCollection(String collectionName, int dimension) {
+           FieldType idField = FieldType.newBuilder()
+               .withName("id")
+               .withDataType(DataType.VarChar)
+               .withMaxLength(100)
+               .withPrimaryKey(true)
+               .build();
+
+           FieldType vectorField = FieldType.newBuilder()
+               .withName("embedding")
+               .withDataType(DataType.FloatVector)
+               .withDimension(dimension)
+               .build();
+
+           FieldType contentField = FieldType.newBuilder()
+               .withName("content")
+               .withDataType(DataType.VarChar)
+               .withMaxLength(65535)
+               .build();
+
+           CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
+               .withCollectionName(collectionName)
+               .addFieldType(idField)
+               .addFieldType(vectorField)
+               .addFieldType(contentField)
+               .build();
+
+           client.createCollection(createParam);
+
+           // 인덱스 생성
+           CreateIndexParam indexParam = CreateIndexParam.newBuilder()
+               .withCollectionName(collectionName)
+               .withFieldName("embedding")
+               .withIndexType(IndexType.IVF_FLAT)
+               .withMetricType(MetricType.COSINE)
+               .withExtraParam("{\"nlist\": 1024}")
+               .build();
+
+           client.createIndex(indexParam);
+       }
+
+       @Override
+       public List<SearchResult> search(String collectionName, float[] queryVector,
+                                         int topK, Double minScore) {
+           // 컬렉션 로드
+           client.loadCollection(LoadCollectionParam.newBuilder()
+               .withCollectionName(collectionName)
+               .build());
+
+           SearchParam searchParam = SearchParam.newBuilder()
+               .withCollectionName(collectionName)
+               .withVectorFieldName("embedding")
+               .withVectors(List.of(Arrays.asList(ArrayUtils.toObject(queryVector))))
+               .withTopK(topK)
+               .withMetricType(MetricType.COSINE)
+               .withOutFields(List.of("content", "documentId", "chunkIndex"))
+               .build();
+
+           R<SearchResults> response = client.search(searchParam);
+
+           return convertResults(response.getData(), minScore);
+       }
+   }
+   ```
+
+4. 설정 (application.yml)
+   ```yaml
+   vectorstore:
+     type: chroma  # chroma 또는 milvus
+
+     chroma:
+       url: http://localhost:8000
+
+     milvus:
+       host: localhost
+       port: 19530
+   ```
+
+5. 컬렉션 명명 규칙
+   ```java
+   @Service
+   public class KnowledgeBaseService {
+
+       public String getCollectionName(KnowledgeBase kb) {
+           // 지식 베이스별 고유 컬렉션명
+           return "kb_" + kb.getId() + "_" + kb.getUserId();
+       }
+
+       @Transactional
+       public KnowledgeBaseResponse createKnowledgeBase(KnowledgeBaseRequest request, Long userId) {
+           KnowledgeBase kb = // ... 저장
+
+           // 벡터 컬렉션 생성
+           String collectionName = getCollectionName(kb);
+           vectorStore.createCollection(collectionName, embeddingService.getDimension());
+
+           return toResponse(kb);
+       }
+   }
+   ```
+
+6. 문서 삭제 시 벡터 삭제
+   ```java
+   @Transactional
+   public void deleteDocument(Long kbId, Long docId, Long userId) {
+       Document document = getDocumentWithOwnerCheck(kbId, docId, userId);
+       KnowledgeBase kb = document.getKnowledgeBase();
+
+       // 벡터 DB에서 삭제
+       vectorStore.deleteByDocumentId(getCollectionName(kb), docId);
+
+       // 파일 삭제
+       fileStorageService.delete(document.getFilePath());
+
+       // DB에서 삭제
+       documentRepository.delete(document);
+
+       // 지식 베이스 통계 업데이트
+       updateKnowledgeBaseStats(kb);
+   }
+   ```
+
+[테스트 기준]
+- [ ] 컬렉션 생성 및 삭제
+- [ ] 벡터 upsert (청크 저장)
+- [ ] 유사도 검색 → Top-K 결과 반환
+- [ ] 메타데이터 필터링 (documentId)
+- [ ] 문서 삭제 시 관련 벡터 삭제
+- [ ] 최소 점수 필터링 동작
+- [ ] Chroma/Milvus 전환 가능 확인
+
+[참고 자료]
+- Chroma: https://docs.trychroma.com/
+- Milvus: https://milvus.io/docs

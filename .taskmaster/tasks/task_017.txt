@@ -1,0 +1,227 @@
+================================================================================
+TASK #017: 에이전트-함수 연결 기능 구현
+================================================================================
+
+[기본 정보]
+- ID: 17
+- 우선순위: medium
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #10 (에이전트 관리 UI), Task #14 (함수 관리 UI)
+
+[설명]
+에이전트에 함수를 연결/해제하는 UI 및 API 구현
+
+[상세 구현 가이드]
+1. 백엔드 API
+   ```java
+   @RestController
+   @RequestMapping("/api/agents")
+   public class AgentController {
+
+       @GetMapping("/{id}/functions")
+       public List<FunctionSummary> getAgentFunctions(@PathVariable Long id);
+
+       @PutMapping("/{id}/functions")
+       public AgentResponse updateAgentFunctions(
+           @PathVariable Long id,
+           @RequestBody UpdateFunctionsRequest request);
+   }
+
+   @Data
+   public class UpdateFunctionsRequest {
+       @NotNull
+       private List<Long> functionIds;
+   }
+   ```
+
+2. AgentService 함수 연결 로직
+   ```java
+   @Transactional
+   public AgentResponse updateAgentFunctions(Long agentId, List<Long> functionIds, Long userId) {
+       Agent agent = getAgentWithOwnerCheck(agentId, userId);
+
+       // 모든 함수 ID가 사용자 소유인지 확인
+       List<Function> functions = functionRepository.findAllByIdInAndUserId(functionIds, userId);
+       if (functions.size() != functionIds.size()) {
+           throw new BadRequestException("일부 함수를 찾을 수 없습니다");
+       }
+
+       // 기존 연결 제거 후 새로 설정
+       agent.getFunctions().clear();
+       agent.getFunctions().addAll(new HashSet<>(functions));
+
+       return toResponse(agentRepository.save(agent));
+   }
+   ```
+
+3. 프론트엔드 FunctionsTab 컴포넌트
+   ```tsx
+   // src/components/agents/tabs/FunctionsTab.tsx
+   export function FunctionsTab({ agent }: Props) {
+     const { data: allFunctions } = useFunctions();
+     const updateFunctions = useUpdateAgentFunctions();
+
+     const [selectedIds, setSelectedIds] = useState<Set<number>>(
+       new Set(agent.functions.map(f => f.id))
+     );
+
+     const handleToggle = (functionId: number) => {
+       setSelectedIds(prev => {
+         const next = new Set(prev);
+         if (next.has(functionId)) {
+           next.delete(functionId);
+         } else {
+           next.add(functionId);
+         }
+         return next;
+       });
+     };
+
+     const handleSave = () => {
+       updateFunctions.mutate({
+         agentId: agent.id,
+         functionIds: Array.from(selectedIds),
+       });
+     };
+
+     return (
+       <div className="space-y-6">
+         <div className="flex justify-between items-center">
+           <p className="text-gray-500">
+             에이전트가 사용할 함수를 선택하세요.
+             선택된 함수는 채팅 중 자동으로 호출될 수 있습니다.
+           </p>
+           <Button onClick={handleSave} disabled={updateFunctions.isPending}>
+             저장
+           </Button>
+         </div>
+
+         <div className="grid grid-cols-2 gap-4">
+           {allFunctions?.map(func => (
+             <FunctionSelectCard
+               key={func.id}
+               function={func}
+               isSelected={selectedIds.has(func.id)}
+               onToggle={() => handleToggle(func.id)}
+             />
+           ))}
+         </div>
+
+         {selectedIds.size === 0 && (
+           <p className="text-center text-gray-400 py-8">
+             선택된 함수가 없습니다. 함수를 선택하면 에이전트가 자동으로 호출할 수 있습니다.
+           </p>
+         )}
+       </div>
+     );
+   }
+   ```
+
+4. FunctionSelectCard 컴포넌트
+   ```tsx
+   export function FunctionSelectCard({ function: func, isSelected, onToggle }: Props) {
+     const [showDetails, setShowDetails] = useState(false);
+
+     return (
+       <div
+         className={`
+           border rounded-lg p-4 cursor-pointer transition-all
+           ${isSelected
+             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+             : 'border-gray-200 hover:border-gray-300'}
+         `}
+         onClick={onToggle}
+       >
+         <div className="flex items-start justify-between">
+           <div className="flex items-center gap-3">
+             <Checkbox checked={isSelected} onChange={onToggle} />
+             <div>
+               <h4 className="font-medium">{func.name}</h4>
+               <p className="text-sm text-gray-500 mt-1">{func.description}</p>
+             </div>
+           </div>
+           <button
+             onClick={(e) => { e.stopPropagation(); setShowDetails(!showDetails); }}
+             className="text-gray-400 hover:text-gray-600"
+           >
+             <Info size={16} />
+           </button>
+         </div>
+
+         {showDetails && (
+           <div className="mt-4 pt-4 border-t">
+             <h5 className="text-sm font-medium mb-2">파라미터</h5>
+             <div className="space-y-1">
+               {func.parameters.map(param => (
+                 <div key={param.name} className="text-sm flex gap-2">
+                   <code className="bg-gray-100 px-1 rounded">{param.name}</code>
+                   <span className="text-gray-500">({param.type})</span>
+                   {param.required && <Badge size="sm">필수</Badge>}
+                 </div>
+               ))}
+             </div>
+           </div>
+         )}
+       </div>
+     );
+   }
+   ```
+
+5. 드래그앤드롭 방식 (대안)
+   ```tsx
+   export function FunctionsTabDnD({ agent }: Props) {
+     const { data: allFunctions } = useFunctions();
+
+     const availableFunctions = allFunctions?.filter(
+       f => !agent.functions.some(af => af.id === f.id)
+     );
+
+     return (
+       <DndContext onDragEnd={handleDragEnd}>
+         <div className="grid grid-cols-2 gap-6">
+           {/* 사용 가능한 함수 */}
+           <DroppableArea id="available" title="사용 가능한 함수">
+             {availableFunctions?.map(func => (
+               <DraggableFunctionCard key={func.id} function={func} />
+             ))}
+           </DroppableArea>
+
+           {/* 연결된 함수 */}
+           <DroppableArea id="connected" title="연결된 함수">
+             {agent.functions.map(func => (
+               <DraggableFunctionCard key={func.id} function={func} />
+             ))}
+           </DroppableArea>
+         </div>
+       </DndContext>
+     );
+   }
+   ```
+
+6. React Query 훅
+   ```tsx
+   export function useUpdateAgentFunctions() {
+     const queryClient = useQueryClient();
+
+     return useMutation({
+       mutationFn: ({ agentId, functionIds }: { agentId: number; functionIds: number[] }) =>
+         agentService.updateFunctions(agentId, functionIds),
+       onSuccess: (_, { agentId }) => {
+         queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+         toast.success('함수 연결이 업데이트되었습니다');
+       },
+     });
+   }
+   ```
+
+[테스트 기준]
+- [ ] 함수 목록 표시 (연결됨/연결안됨 구분)
+- [ ] 체크박스로 함수 선택/해제
+- [ ] 저장 버튼 클릭 → API 호출 → 반영
+- [ ] 함수 상세 정보 미리보기
+- [ ] 연결된 함수 없음 안내 메시지
+- [ ] 저장 중 로딩 상태 표시
+
+[참고 자료]
+- dnd-kit (드래그앤드롭): https://dndkit.com/

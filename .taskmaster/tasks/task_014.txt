@@ -1,0 +1,285 @@
+================================================================================
+TASK #014: 함수 관리 UI 페이지 구현
+================================================================================
+
+[기본 정보]
+- ID: 14
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #6 (인증 UI), Task #13 (함수 관리 API)
+
+[설명]
+함수 목록 페이지, 함수 생성/편집 모달 UI 구현
+
+[상세 구현 가이드]
+1. 페이지 및 컴포넌트 구조
+   ```
+   src/pages/
+   └── FunctionsPage.tsx
+
+   src/components/functions/
+   ├── FunctionList.tsx
+   ├── FunctionCard.tsx
+   ├── FunctionModal.tsx
+   ├── ParameterBuilder.tsx
+   ├── ImplementationEditor.tsx
+   │   ├── HttpApiEditor.tsx
+   │   ├── CodeEditor.tsx
+   │   └── TemplateSelector.tsx
+   ├── JsonSchemaPreview.tsx
+   └── FunctionTestPanel.tsx
+   ```
+
+2. 함수 관리 페이지 (/functions)
+   ```tsx
+   export function FunctionsPage() {
+     const { data: functions, isLoading } = useFunctions();
+     const [isModalOpen, setIsModalOpen] = useState(false);
+     const [editingFunction, setEditingFunction] = useState<Function | null>(null);
+
+     return (
+       <div className="p-6">
+         <header className="flex justify-between items-center mb-6">
+           <div>
+             <h1 className="text-2xl font-bold">함수 관리</h1>
+             <p className="text-gray-500">에이전트가 사용할 함수를 정의하세요</p>
+           </div>
+           <Button onClick={() => setIsModalOpen(true)}>+ 함수 추가</Button>
+         </header>
+
+         <FunctionTable
+           functions={functions}
+           onEdit={setEditingFunction}
+           isLoading={isLoading}
+         />
+
+         <FunctionModal
+           isOpen={isModalOpen || !!editingFunction}
+           function={editingFunction}
+           onClose={() => { setIsModalOpen(false); setEditingFunction(null); }}
+         />
+       </div>
+     );
+   }
+   ```
+
+3. FunctionTable 컴포넌트
+   ```tsx
+   export function FunctionTable({ functions, onEdit }: Props) {
+     return (
+       <table className="w-full">
+         <thead>
+           <tr className="text-left border-b">
+             <th className="pb-3">이름</th>
+             <th className="pb-3">설명</th>
+             <th className="pb-3">파라미터</th>
+             <th className="pb-3">타입</th>
+             <th className="pb-3">사용 에이전트</th>
+             <th className="pb-3"></th>
+           </tr>
+         </thead>
+         <tbody>
+           {functions.map(func => (
+             <tr key={func.id} className="border-b hover:bg-gray-50">
+               <td className="py-4 font-medium">{func.name}</td>
+               <td className="py-4 text-gray-500">{func.description}</td>
+               <td className="py-4">
+                 <Badge>{func.parameters.length}개</Badge>
+               </td>
+               <td className="py-4">
+                 <Badge variant="outline">{func.implementationType}</Badge>
+               </td>
+               <td className="py-4">{func.agentCount}개</td>
+               <td className="py-4">
+                 <ActionMenu func={func} onEdit={onEdit} />
+               </td>
+             </tr>
+           ))}
+         </tbody>
+       </table>
+     );
+   }
+   ```
+
+4. FunctionModal (생성/편집)
+   ```tsx
+   export function FunctionModal({ isOpen, function: func, onClose }: Props) {
+     const [step, setStep] = useState(1); // 1: 기본정보, 2: 파라미터, 3: 구현
+     const [showPreview, setShowPreview] = useState(false);
+
+     return (
+       <Modal isOpen={isOpen} onClose={onClose} size="xl">
+         {/* 스텝 인디케이터 */}
+         <StepIndicator currentStep={step} steps={['기본 정보', '파라미터', '구현']} />
+
+         {step === 1 && (
+           <BasicInfoStep
+             register={register}
+             errors={errors}
+             onNext={() => setStep(2)}
+           />
+         )}
+
+         {step === 2 && (
+           <ParameterStep
+             parameters={parameters}
+             onChange={setParameters}
+             onNext={() => setStep(3)}
+             onBack={() => setStep(1)}
+           />
+         )}
+
+         {step === 3 && (
+           <ImplementationStep
+             implementationType={implementationType}
+             implementation={implementation}
+             onChange={setImplementation}
+             onSubmit={handleSubmit}
+             onBack={() => setStep(2)}
+           />
+         )}
+
+         {/* JSON Schema 미리보기 사이드패널 */}
+         {showPreview && (
+           <JsonSchemaPreview
+             name={watch('name')}
+             description={watch('description')}
+             parameters={parameters}
+           />
+         )}
+       </Modal>
+     );
+   }
+   ```
+
+5. ParameterBuilder 컴포넌트
+   ```tsx
+   export function ParameterBuilder({ parameters, onChange }: Props) {
+     const addParameter = () => {
+       onChange([...parameters, {
+         name: '',
+         type: 'string',
+         required: true,
+         description: '',
+       }]);
+     };
+
+     const removeParameter = (index: number) => {
+       onChange(parameters.filter((_, i) => i !== index));
+     };
+
+     return (
+       <div className="space-y-4">
+         {parameters.map((param, index) => (
+           <div key={index} className="border rounded-lg p-4">
+             <div className="grid grid-cols-2 gap-4">
+               <Input
+                 label="파라미터명"
+                 value={param.name}
+                 onChange={(e) => updateParam(index, 'name', e.target.value)}
+               />
+               <Select
+                 label="타입"
+                 value={param.type}
+                 onChange={(e) => updateParam(index, 'type', e.target.value)}
+               >
+                 <option value="string">String</option>
+                 <option value="number">Number</option>
+                 <option value="boolean">Boolean</option>
+                 <option value="object">Object</option>
+                 <option value="array">Array</option>
+               </Select>
+             </div>
+             <Textarea
+               label="설명"
+               value={param.description}
+               onChange={(e) => updateParam(index, 'description', e.target.value)}
+             />
+             <div className="flex justify-between mt-2">
+               <Checkbox
+                 label="필수"
+                 checked={param.required}
+                 onChange={(e) => updateParam(index, 'required', e.target.checked)}
+               />
+               <Button variant="ghost" size="sm" onClick={() => removeParameter(index)}>
+                 삭제
+               </Button>
+             </div>
+           </div>
+         ))}
+
+         <Button variant="outline" onClick={addParameter}>
+           + 파라미터 추가
+         </Button>
+       </div>
+     );
+   }
+   ```
+
+6. HttpApiEditor 컴포넌트
+   ```tsx
+   export function HttpApiEditor({ value, onChange }: Props) {
+     return (
+       <div className="space-y-4">
+         <Select label="HTTP 메서드" value={value.method} onChange={...}>
+           <option value="GET">GET</option>
+           <option value="POST">POST</option>
+           <option value="PUT">PUT</option>
+           <option value="DELETE">DELETE</option>
+         </Select>
+
+         <Input
+           label="URL"
+           placeholder="https://api.example.com/endpoint?param={{paramName}}"
+           value={value.url}
+           onChange={...}
+         />
+
+         <div>
+           <label>헤더</label>
+           <KeyValueEditor value={value.headers} onChange={...} />
+         </div>
+
+         <Textarea
+           label="Request Body (POST/PUT)"
+           value={value.body}
+           onChange={...}
+           rows={4}
+         />
+
+         <Input
+           label="응답 매핑 (JSONPath)"
+           placeholder="$.data.result"
+           value={value.responseMapping}
+           onChange={...}
+         />
+       </div>
+     );
+   }
+   ```
+
+7. JsonSchemaPreview 컴포넌트
+   ```tsx
+   export function JsonSchemaPreview({ name, description, parameters }: Props) {
+     const schema = useMemo(() => generateSchema(name, description, parameters), [name, description, parameters]);
+
+     return (
+       <div className="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-sm">
+         <pre>{JSON.stringify(schema, null, 2)}</pre>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 함수 목록 테이블 표시
+- [ ] 함수 생성 모달 스텝 진행
+- [ ] 파라미터 동적 추가/삭제
+- [ ] 구현 타입 전환 (HTTP API / 코드)
+- [ ] JSON Schema 실시간 미리보기
+- [ ] 함수 편집 → 변경 저장
+- [ ] 함수 삭제 확인
+
+[참고 자료]
+- React Hook Form: https://react-hook-form.com/

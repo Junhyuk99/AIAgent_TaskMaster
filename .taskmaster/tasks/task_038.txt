@@ -1,0 +1,385 @@
+================================================================================
+TASK #038: vLLM/Custom API 연동 구현
+================================================================================
+
+[기본 정보]
+- ID: 38
+- 우선순위: medium
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #8 (Ollama 연동)
+
+[설명]
+vLLM (OpenAI 호환 API), Custom 엔드포인트 연동 구현
+
+[상세 구현 가이드]
+1. OpenAICompatibleConnector 클래스
+   ```java
+   @Component
+   public class OpenAICompatibleConnector implements LlmConnector {
+
+       private final WebClient webClient;
+       private final LlmServer server;
+
+       public OpenAICompatibleConnector(LlmServer server) {
+           this.server = server;
+
+           WebClient.Builder builder = WebClient.builder()
+               .baseUrl(server.getBaseUrl())
+               .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+
+           // 인증 토큰이 있는 경우
+           if (server.getAuthToken() != null) {
+               builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + server.getAuthToken());
+           }
+
+           this.webClient = builder.build();
+       }
+
+       @Override
+       public boolean testConnection() {
+           try {
+               // /v1/models 엔드포인트로 연결 테스트
+               OpenAIModelsResponse response = webClient.get()
+                   .uri("/v1/models")
+                   .retrieve()
+                   .bodyToMono(OpenAIModelsResponse.class)
+                   .timeout(Duration.ofSeconds(5))
+                   .block();
+
+               return response != null && response.getData() != null;
+           } catch (Exception e) {
+               log.error("Connection test failed: {}", e.getMessage());
+               return false;
+           }
+       }
+
+       @Override
+       public List<ModelInfo> listModels() {
+           OpenAIModelsResponse response = webClient.get()
+               .uri("/v1/models")
+               .retrieve()
+               .bodyToMono(OpenAIModelsResponse.class)
+               .block();
+
+           return response.getData().stream()
+               .map(m -> ModelInfo.builder()
+                   .name(m.getId())
+                   .ownedBy(m.getOwnedBy())
+                   .build())
+               .collect(Collectors.toList());
+       }
+
+       @Override
+       public ChatResponse chat(ChatRequest request) {
+           OpenAIChatRequest openAIRequest = OpenAIChatRequest.builder()
+               .model(request.getModel())
+               .messages(convertMessages(request.getMessages()))
+               .temperature(request.getTemperature())
+               .maxTokens(request.getMaxTokens())
+               .stream(false)
+               .build();
+
+           // Function Calling 지원
+           if (request.getTools() != null && !request.getTools().isEmpty()) {
+               openAIRequest.setTools(request.getTools());
+           }
+
+           OpenAIChatResponse response = webClient.post()
+               .uri("/v1/chat/completions")
+               .bodyValue(openAIRequest)
+               .retrieve()
+               .bodyToMono(OpenAIChatResponse.class)
+               .block();
+
+           OpenAIChatChoice choice = response.getChoices().get(0);
+
+           return ChatResponse.builder()
+               .content(choice.getMessage().getContent())
+               .toolCalls(convertToolCalls(choice.getMessage().getToolCalls()))
+               .usage(ChatUsage.builder()
+                   .promptTokens(response.getUsage().getPromptTokens())
+                   .completionTokens(response.getUsage().getCompletionTokens())
+                   .totalTokens(response.getUsage().getTotalTokens())
+                   .build())
+               .build();
+       }
+
+       @Override
+       public Flux<String> chatStream(ChatRequest request) {
+           OpenAIChatRequest openAIRequest = OpenAIChatRequest.builder()
+               .model(request.getModel())
+               .messages(convertMessages(request.getMessages()))
+               .temperature(request.getTemperature())
+               .maxTokens(request.getMaxTokens())
+               .stream(true)
+               .build();
+
+           return webClient.post()
+               .uri("/v1/chat/completions")
+               .bodyValue(openAIRequest)
+               .retrieve()
+               .bodyToFlux(String.class)
+               .filter(line -> line.startsWith("data:"))
+               .map(line -> line.substring(5).trim())
+               .filter(data -> !data.equals("[DONE]"))
+               .map(this::parseStreamChunk)
+               .filter(Objects::nonNull);
+       }
+
+       private String parseStreamChunk(String data) {
+           try {
+               JsonNode node = objectMapper.readTree(data);
+               JsonNode delta = node.path("choices").get(0).path("delta").path("content");
+               return delta.isNull() ? null : delta.asText();
+           } catch (Exception e) {
+               return null;
+           }
+       }
+
+       private List<OpenAIMessage> convertMessages(List<Message> messages) {
+           return messages.stream()
+               .map(m -> OpenAIMessage.builder()
+                   .role(m.getRole())
+                   .content(m.getContent())
+                   .build())
+               .collect(Collectors.toList());
+       }
+   }
+   ```
+
+2. OpenAI 호환 DTO
+   ```java
+   @Data
+   @Builder
+   public class OpenAIChatRequest {
+       private String model;
+       private List<OpenAIMessage> messages;
+       private Double temperature;
+
+       @JsonProperty("max_tokens")
+       private Integer maxTokens;
+
+       private Boolean stream;
+       private List<JsonNode> tools;
+   }
+
+   @Data
+   public class OpenAIChatResponse {
+       private String id;
+       private String object;
+       private Long created;
+       private String model;
+       private List<OpenAIChatChoice> choices;
+       private OpenAIUsage usage;
+   }
+
+   @Data
+   public class OpenAIChatChoice {
+       private Integer index;
+       private OpenAIMessage message;
+
+       @JsonProperty("finish_reason")
+       private String finishReason;
+   }
+
+   @Data
+   @Builder
+   @NoArgsConstructor
+   @AllArgsConstructor
+   public class OpenAIMessage {
+       private String role;
+       private String content;
+
+       @JsonProperty("tool_calls")
+       private List<OpenAIToolCall> toolCalls;
+   }
+
+   @Data
+   public class OpenAIToolCall {
+       private String id;
+       private String type;
+       private OpenAIFunctionCall function;
+   }
+
+   @Data
+   public class OpenAIFunctionCall {
+       private String name;
+       private String arguments;  // JSON string
+   }
+
+   @Data
+   public class OpenAIUsage {
+       @JsonProperty("prompt_tokens")
+       private Integer promptTokens;
+
+       @JsonProperty("completion_tokens")
+       private Integer completionTokens;
+
+       @JsonProperty("total_tokens")
+       private Integer totalTokens;
+   }
+   ```
+
+3. Custom Connector (유연한 설정)
+   ```java
+   @Component
+   public class CustomConnector implements LlmConnector {
+
+       private final WebClient webClient;
+       private final LlmServer server;
+       private final CustomConnectorConfig config;
+
+       public CustomConnector(LlmServer server) {
+           this.server = server;
+           this.config = parseConfig(server.getCustomConfig());
+           this.webClient = buildWebClient();
+       }
+
+       @Override
+       public ChatResponse chat(ChatRequest request) {
+           // 커스텀 요청 형식으로 변환
+           Map<String, Object> customRequest = buildCustomRequest(request);
+
+           String response = webClient.post()
+               .uri(config.getChatEndpoint())
+               .bodyValue(customRequest)
+               .retrieve()
+               .bodyToMono(String.class)
+               .block();
+
+           // 커스텀 응답 파싱 (JSONPath 사용)
+           return parseCustomResponse(response);
+       }
+
+       private Map<String, Object> buildCustomRequest(ChatRequest request) {
+           Map<String, Object> customRequest = new HashMap<>();
+
+           // 설정된 매핑에 따라 요청 구성
+           config.getRequestMappings().forEach((key, path) -> {
+               Object value = getValueFromRequest(request, path);
+               setValueByPath(customRequest, key, value);
+           });
+
+           return customRequest;
+       }
+
+       private ChatResponse parseCustomResponse(String response) {
+           DocumentContext context = JsonPath.parse(response);
+
+           return ChatResponse.builder()
+               .content(context.read(config.getResponseContentPath()))
+               .build();
+       }
+   }
+
+   @Data
+   public class CustomConnectorConfig {
+       private String chatEndpoint = "/v1/chat/completions";
+       private String modelsEndpoint = "/v1/models";
+       private Map<String, String> requestMappings;  // {"model": "$.model", "prompt": "$.messages[-1].content"}
+       private String responseContentPath = "$.choices[0].message.content";
+       private Map<String, String> headers;
+   }
+   ```
+
+4. LlmConnectorFactory 업데이트
+   ```java
+   @Component
+   public class LlmConnectorFactory {
+
+       public LlmConnector getConnector(LlmServer server) {
+           return switch (server.getType()) {
+               case OLLAMA -> new OllamaConnector(server);
+               case VLLM -> new OpenAICompatibleConnector(server);
+               case LOCAL_AI -> new OpenAICompatibleConnector(server);  // OpenAI 호환
+               case CUSTOM -> new CustomConnector(server);
+           };
+       }
+   }
+   ```
+
+5. LLM 서버 타입별 기본 설정
+   ```java
+   public enum LlmServerType {
+       OLLAMA("http://localhost:11434", "/api/chat", "/api/tags"),
+       VLLM("http://localhost:8000", "/v1/chat/completions", "/v1/models"),
+       LOCAL_AI("http://localhost:8080", "/v1/chat/completions", "/v1/models"),
+       CUSTOM(null, null, null);
+
+       private final String defaultUrl;
+       private final String chatEndpoint;
+       private final String modelsEndpoint;
+   }
+   ```
+
+6. 프론트엔드 서버 타입별 설정 UI
+   ```tsx
+   export function LlmServerForm({ server, onSubmit }: Props) {
+     const [type, setType] = useState(server?.type || 'OLLAMA');
+
+     const typeDefaults = {
+       OLLAMA: { url: 'http://localhost:11434' },
+       VLLM: { url: 'http://localhost:8000' },
+       LOCAL_AI: { url: 'http://localhost:8080' },
+       CUSTOM: { url: '' },
+     };
+
+     return (
+       <form onSubmit={handleSubmit(onSubmit)}>
+         <Select label="서버 타입" value={type} onChange={setType}>
+           <option value="OLLAMA">Ollama</option>
+           <option value="VLLM">vLLM (OpenAI 호환)</option>
+           <option value="LOCAL_AI">LocalAI</option>
+           <option value="CUSTOM">커스텀</option>
+         </Select>
+
+         <Input
+           label="서버 주소"
+           placeholder={typeDefaults[type].url}
+           {...register('baseUrl')}
+         />
+
+         {(type === 'VLLM' || type === 'CUSTOM') && (
+           <Input
+             label="API 키 (선택)"
+             type="password"
+             {...register('authToken')}
+           />
+         )}
+
+         {type === 'CUSTOM' && (
+           <div className="mt-4 p-4 bg-gray-50 rounded">
+             <h4 className="font-medium mb-2">고급 설정</h4>
+             <Input
+               label="채팅 엔드포인트"
+               placeholder="/v1/chat/completions"
+               {...register('customConfig.chatEndpoint')}
+             />
+             <Input
+               label="모델 목록 엔드포인트"
+               placeholder="/v1/models"
+               {...register('customConfig.modelsEndpoint')}
+             />
+           </div>
+         )}
+
+         <Button type="submit">저장</Button>
+       </form>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] vLLM 서버 연결 테스트 성공
+- [ ] vLLM 모델 목록 조회
+- [ ] vLLM 채팅 완성 요청/응답
+- [ ] vLLM 스트리밍 응답
+- [ ] LocalAI 서버 연동 (OpenAI 호환)
+- [ ] Custom 엔드포인트 설정 및 연동
+- [ ] Function Calling 지원 (vLLM)
+
+[참고 자료]
+- vLLM: https://docs.vllm.ai/
+- OpenAI API Reference: https://platform.openai.com/docs/api-reference
+- LocalAI: https://localai.io/

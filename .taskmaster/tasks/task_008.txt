@@ -1,0 +1,172 @@
+================================================================================
+TASK #008: Ollama 연동 구현
+================================================================================
+
+[기본 정보]
+- ID: 8
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #7 (LLM 서버 관리 API)
+
+[설명]
+Ollama API 클라이언트 구현, 모델 목록 조회, 채팅 완성 API 연동
+
+[상세 구현 가이드]
+1. OllamaConnector 클래스 구현
+   ```java
+   @Component
+   public class OllamaConnector implements LlmConnector {
+       private final WebClient webClient;
+       private final LlmServer server;
+
+       public OllamaConnector(LlmServer server) {
+           this.server = server;
+           this.webClient = WebClient.builder()
+               .baseUrl(server.getBaseUrl())
+               .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+               .build();
+       }
+   }
+   ```
+
+2. 연결 테스트 (GET /)
+   ```java
+   @Override
+   public boolean testConnection() {
+       try {
+           String response = webClient.get()
+               .uri("/")
+               .retrieve()
+               .bodyToMono(String.class)
+               .timeout(Duration.ofSeconds(5))
+               .block();
+           return response != null && response.contains("Ollama");
+       } catch (Exception e) {
+           return false;
+       }
+   }
+   ```
+
+3. 모델 목록 조회 (GET /api/tags)
+   ```java
+   @Override
+   public List<ModelInfo> listModels() {
+       OllamaTagsResponse response = webClient.get()
+           .uri("/api/tags")
+           .retrieve()
+           .bodyToMono(OllamaTagsResponse.class)
+           .block();
+
+       return response.getModels().stream()
+           .map(m -> new ModelInfo(m.getName(), m.getSize(), m.getModifiedAt()))
+           .collect(Collectors.toList());
+   }
+
+   // Ollama 응답 DTO
+   @Data
+   public class OllamaTagsResponse {
+       private List<OllamaModel> models;
+   }
+   ```
+
+4. 채팅 완성 (POST /api/chat)
+   ```java
+   @Override
+   public ChatResponse chat(ChatRequest request) {
+       OllamaChatRequest ollamaRequest = OllamaChatRequest.builder()
+           .model(request.getModel())
+           .messages(convertMessages(request.getMessages()))
+           .stream(false)
+           .options(OllamaOptions.builder()
+               .temperature(request.getTemperature())
+               .num_predict(request.getMaxTokens())
+               .build())
+           .build();
+
+       OllamaChatResponse response = webClient.post()
+           .uri("/api/chat")
+           .bodyValue(ollamaRequest)
+           .retrieve()
+           .bodyToMono(OllamaChatResponse.class)
+           .block();
+
+       return ChatResponse.builder()
+           .content(response.getMessage().getContent())
+           .model(response.getModel())
+           .totalDuration(response.getTotalDuration())
+           .build();
+   }
+   ```
+
+5. 스트리밍 응답 (POST /api/chat with stream=true)
+   ```java
+   @Override
+   public Flux<String> chatStream(ChatRequest request) {
+       OllamaChatRequest ollamaRequest = OllamaChatRequest.builder()
+           .model(request.getModel())
+           .messages(convertMessages(request.getMessages()))
+           .stream(true)
+           .build();
+
+       return webClient.post()
+           .uri("/api/chat")
+           .bodyValue(ollamaRequest)
+           .retrieve()
+           .bodyToFlux(OllamaStreamResponse.class)
+           .map(r -> r.getMessage().getContent())
+           .takeUntil(r -> r.isDone());
+   }
+   ```
+
+6. 텍스트 생성 (POST /api/generate)
+   ```java
+   public GenerateResponse generate(GenerateRequest request) {
+       OllamaGenerateRequest ollamaRequest = OllamaGenerateRequest.builder()
+           .model(request.getModel())
+           .prompt(request.getPrompt())
+           .stream(false)
+           .build();
+
+       OllamaGenerateResponse response = webClient.post()
+           .uri("/api/generate")
+           .bodyValue(ollamaRequest)
+           .retrieve()
+           .bodyToMono(OllamaGenerateResponse.class)
+           .block();
+
+       return new GenerateResponse(response.getResponse());
+   }
+   ```
+
+7. 타임아웃 및 재시도 설정
+   ```java
+   webClient = WebClient.builder()
+       .baseUrl(server.getBaseUrl())
+       .clientConnector(new ReactorClientHttpConnector(
+           HttpClient.create()
+               .responseTimeout(Duration.ofMinutes(2))  // LLM 응답 대기
+               .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
+       ))
+       .build();
+   ```
+
+8. 에러 처리
+   ```java
+   .onStatus(HttpStatusCode::isError, response ->
+       response.bodyToMono(String.class)
+           .flatMap(body -> Mono.error(
+               new LlmConnectionException("Ollama error: " + body))))
+   ```
+
+[테스트 기준]
+- [ ] 실제 Ollama 서버 연결 테스트 성공
+- [ ] 모델 목록 조회 (llama2, mistral 등 표시)
+- [ ] 채팅 완성 요청 → 응답 수신 확인
+- [ ] 스트리밍 응답 정상 동작 확인
+- [ ] 연결 실패 시 적절한 에러 메시지
+- [ ] 타임아웃 동작 확인
+
+[참고 자료]
+- Ollama API 문서: https://github.com/ollama/ollama/blob/main/docs/api.md
+- Ollama 모델 라이브러리: https://ollama.ai/library

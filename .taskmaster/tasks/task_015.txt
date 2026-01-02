@@ -1,0 +1,189 @@
+================================================================================
+TASK #015: HTTP API 방식 함수 구현
+================================================================================
+
+[기본 정보]
+- ID: 15
+- 우선순위: medium
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #13 (함수 관리 API)
+
+[설명]
+함수 실행 시 외부 HTTP API를 호출하는 로직 구현
+
+[상세 구현 가이드]
+1. HttpApiFunctionExecutor 구조
+   ```java
+   @Component
+   public class HttpApiFunctionExecutor implements FunctionExecutor {
+       private final WebClient webClient;
+       private final ObjectMapper objectMapper;
+
+       @Override
+       public ImplementationType getType() {
+           return ImplementationType.HTTP_API;
+       }
+
+       @Override
+       public Object execute(Function function, Map<String, Object> parameters);
+   }
+   ```
+
+2. Implementation 설정 파싱
+   ```java
+   @Data
+   public class HttpApiImplementation {
+       private String method;  // GET, POST, PUT, DELETE
+       private String url;     // URL 템플릿 ({{param}} 포함 가능)
+       private Map<String, String> headers;
+       private String body;    // Request body 템플릿
+       private String responseMapping;  // JSONPath 표현식
+       private Integer timeout;  // 타임아웃 (밀리초)
+   }
+   ```
+
+3. URL/Body 템플릿 처리
+   ```java
+   private String processTemplate(String template, Map<String, Object> params) {
+       if (template == null) return null;
+
+       String result = template;
+       for (Map.Entry<String, Object> entry : params.entrySet()) {
+           String placeholder = "{{" + entry.getKey() + "}}";
+           String value = entry.getValue() != null
+               ? entry.getValue().toString()
+               : "";
+           result = result.replace(placeholder, URLEncoder.encode(value, StandardCharsets.UTF_8));
+       }
+       return result;
+   }
+   ```
+
+4. HTTP 요청 실행
+   ```java
+   @Override
+   public Object execute(Function function, Map<String, Object> parameters) {
+       HttpApiImplementation config = parseImplementation(function.getImplementation());
+
+       // URL 템플릿 처리
+       String url = processTemplate(config.getUrl(), parameters);
+
+       // WebClient 요청 구성
+       WebClient.RequestBodySpec request = webClient
+           .method(HttpMethod.valueOf(config.getMethod()))
+           .uri(url);
+
+       // 헤더 추가
+       if (config.getHeaders() != null) {
+           config.getHeaders().forEach((key, value) -> {
+               request.header(key, processTemplate(value, parameters));
+           });
+       }
+
+       // Body 추가 (POST, PUT)
+       if (config.getBody() != null && !config.getMethod().equals("GET")) {
+           String body = processTemplate(config.getBody(), parameters);
+           request.bodyValue(body);
+       }
+
+       // 요청 실행
+       String response = request
+           .retrieve()
+           .bodyToMono(String.class)
+           .timeout(Duration.ofMillis(config.getTimeout() != null ? config.getTimeout() : 30000))
+           .block();
+
+       // 응답 매핑 (JSONPath)
+       if (config.getResponseMapping() != null) {
+           return extractWithJsonPath(response, config.getResponseMapping());
+       }
+
+       return response;
+   }
+   ```
+
+5. JSONPath 응답 매핑
+   ```java
+   private Object extractWithJsonPath(String json, String path) {
+       try {
+           DocumentContext context = JsonPath.parse(json);
+           return context.read(path);
+       } catch (PathNotFoundException e) {
+           throw new FunctionExecutionException("JSONPath 경로를 찾을 수 없습니다: " + path);
+       }
+   }
+   ```
+
+6. 에러 처리
+   ```java
+   .onStatus(HttpStatusCode::isError, response -> {
+       return response.bodyToMono(String.class)
+           .flatMap(body -> Mono.error(
+               new FunctionExecutionException(
+                   "HTTP 오류 " + response.statusCode() + ": " + body)));
+   })
+   ```
+
+7. 보안 고려사항
+   ```java
+   // URL 화이트리스트 검증 (옵션)
+   private void validateUrl(String url) {
+       // 내부 네트워크 접근 차단
+       if (url.contains("localhost") || url.contains("127.0.0.1")) {
+           throw new SecurityException("내부 네트워크 접근이 차단되었습니다");
+       }
+   }
+
+   // 민감 헤더 마스킹 (로깅 시)
+   private Map<String, String> maskSensitiveHeaders(Map<String, String> headers) {
+       return headers.entrySet().stream()
+           .collect(Collectors.toMap(
+               Map.Entry::getKey,
+               e -> e.getKey().equalsIgnoreCase("Authorization")
+                   ? "***" : e.getValue()
+           ));
+   }
+   ```
+
+8. 실행 로그 저장
+   ```java
+   @Data
+   @Entity
+   public class FunctionExecutionLog {
+       @Id @GeneratedValue
+       private Long id;
+       private Long functionId;
+       private String requestUrl;
+       private String requestMethod;
+       private String requestHeaders;  // JSON, 민감정보 마스킹
+       private String requestBody;
+       private Integer responseStatus;
+       private String responseBody;
+       private Long executionTime;
+       private Boolean success;
+       private String errorMessage;
+       private LocalDateTime createdAt;
+   }
+   ```
+
+9. 재시도 로직 (옵션)
+   ```java
+   .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+       .filter(throwable -> throwable instanceof WebClientRequestException)
+       .doBeforeRetry(signal -> log.warn("Retry attempt: {}", signal.totalRetries())))
+   ```
+
+[테스트 기준]
+- [ ] GET 요청 함수 실행 확인
+- [ ] POST 요청 함수 실행 확인 (JSON body)
+- [ ] URL 파라미터 바인딩 동작
+- [ ] 헤더 파라미터 바인딩 동작
+- [ ] JSONPath 응답 매핑 확인
+- [ ] 타임아웃 에러 처리
+- [ ] HTTP 에러 응답 처리 (4xx, 5xx)
+- [ ] 실행 로그 저장 확인
+
+[참고 자료]
+- Spring WebClient: https://docs.spring.io/spring-framework/reference/web/webflux-webclient.html
+- JSONPath: https://github.com/json-path/JsonPath

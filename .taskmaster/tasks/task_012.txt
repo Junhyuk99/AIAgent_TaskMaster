@@ -1,0 +1,242 @@
+================================================================================
+TASK #012: 기본 채팅 테스트 기능 구현
+================================================================================
+
+[기본 정보]
+- ID: 12
+- 우선순위: high
+- 복잡도: 6/10
+- 상태: pending
+- 의존성: Task #8 (Ollama 연동), Task #10 (에이전트 관리 UI)
+
+[설명]
+에이전트와 실시간 채팅 테스트 UI 및 백엔드 API 구현
+
+[상세 구현 가이드]
+1. 백엔드 구조
+   ```
+   src/main/java/com/aiagent/
+   ├── controller/ChatController.java
+   ├── service/ChatService.java
+   └── dto/
+       ├── ChatMessageRequest.java
+       ├── ChatMessageResponse.java
+       └── ChatStreamResponse.java
+   ```
+
+2. ChatController API
+   ```java
+   @RestController
+   @RequestMapping("/api/chat")
+   public class ChatController {
+
+       @PostMapping("/{agentId}")
+       public ChatMessageResponse chat(
+           @PathVariable Long agentId,
+           @RequestBody ChatMessageRequest request) {
+           return chatService.chat(agentId, request, getCurrentUserId());
+       }
+
+       @PostMapping("/{agentId}/stream")
+       public Flux<ServerSentEvent<String>> chatStream(
+           @PathVariable Long agentId,
+           @RequestBody ChatMessageRequest request) {
+           return chatService.chatStream(agentId, request, getCurrentUserId());
+       }
+   }
+   ```
+
+3. ChatService 구현
+   ```java
+   @Service
+   public class ChatService {
+       public ChatMessageResponse chat(Long agentId, ChatMessageRequest request, Long userId) {
+           Agent agent = agentRepository.findByIdAndUserId(agentId, userId)
+               .orElseThrow(() -> new NotFoundException("에이전트를 찾을 수 없습니다"));
+
+           // 메시지 히스토리 구성
+           List<Message> messages = new ArrayList<>();
+           messages.add(new Message("system", agent.getSystemPrompt()));
+           messages.addAll(request.getHistory());
+           messages.add(new Message("user", request.getMessage()));
+
+           // LLM 호출
+           LlmConnector connector = connectorFactory.getConnector(agent.getLlmServer());
+           ChatRequest llmRequest = ChatRequest.builder()
+               .model(agent.getModelName())
+               .messages(messages)
+               .temperature(agent.getTemperature())
+               .maxTokens(agent.getMaxTokens())
+               .build();
+
+           ChatResponse llmResponse = connector.chat(llmRequest);
+
+           return ChatMessageResponse.builder()
+               .content(llmResponse.getContent())
+               .model(llmResponse.getModel())
+               .timestamp(LocalDateTime.now())
+               .build();
+       }
+
+       public Flux<ServerSentEvent<String>> chatStream(Long agentId, ChatMessageRequest request, Long userId) {
+           // ... 에이전트 조회 및 메시지 구성 동일
+
+           return connector.chatStream(llmRequest)
+               .map(content -> ServerSentEvent.<String>builder()
+                   .data(content)
+                   .build())
+               .concatWith(Flux.just(
+                   ServerSentEvent.<String>builder()
+                       .event("done")
+                       .data("")
+                       .build()
+               ));
+       }
+   }
+   ```
+
+4. 프론트엔드 컴포넌트 구조
+   ```
+   src/components/chat/
+   ├── ChatContainer.tsx
+   ├── ChatMessages.tsx
+   ├── ChatMessage.tsx
+   ├── ChatInput.tsx
+   └── StreamingMessage.tsx
+   ```
+
+5. ChatContainer (에이전트 테스트 탭)
+   ```tsx
+   export function ChatContainer({ agentId }: Props) {
+     const [messages, setMessages] = useState<Message[]>([]);
+     const [input, setInput] = useState('');
+     const [isStreaming, setIsStreaming] = useState(false);
+     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+     const sendMessage = async () => {
+       if (!input.trim() || isStreaming) return;
+
+       const userMessage = { role: 'user', content: input };
+       setMessages(prev => [...prev, userMessage]);
+       setInput('');
+       setIsStreaming(true);
+
+       try {
+         // SSE 스트리밍
+         const response = await fetch(`/api/chat/${agentId}/stream`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json', ...authHeaders },
+           body: JSON.stringify({ message: input, history: messages }),
+         });
+
+         const reader = response.body!.getReader();
+         const decoder = new TextDecoder();
+         let assistantContent = '';
+
+         while (true) {
+           const { done, value } = await reader.read();
+           if (done) break;
+
+           const chunk = decoder.decode(value);
+           // SSE 파싱
+           const lines = chunk.split('\n');
+           for (const line of lines) {
+             if (line.startsWith('data:')) {
+               const data = line.slice(5).trim();
+               if (data && data !== '[DONE]') {
+                 assistantContent += data;
+                 setMessages(prev => {
+                   const newMessages = [...prev];
+                   const lastMsg = newMessages[newMessages.length - 1];
+                   if (lastMsg?.role === 'assistant') {
+                     lastMsg.content = assistantContent;
+                   } else {
+                     newMessages.push({ role: 'assistant', content: assistantContent });
+                   }
+                   return newMessages;
+                 });
+               }
+             }
+           }
+         }
+       } finally {
+         setIsStreaming(false);
+       }
+     };
+
+     return (
+       <div className="flex flex-col h-[600px]">
+         <ChatMessages messages={messages} />
+         <ChatInput
+           value={input}
+           onChange={setInput}
+           onSend={sendMessage}
+           isLoading={isStreaming}
+         />
+       </div>
+     );
+   }
+   ```
+
+6. ChatMessages 컴포넌트
+   ```tsx
+   export function ChatMessages({ messages }: Props) {
+     return (
+       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+         {messages.map((msg, idx) => (
+           <ChatMessage key={idx} message={msg} />
+         ))}
+       </div>
+     );
+   }
+
+   export function ChatMessage({ message }: Props) {
+     const isUser = message.role === 'user';
+     return (
+       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+         <div className={`max-w-[80%] rounded-lg p-3 ${
+           isUser
+             ? 'bg-blue-500 text-white'
+             : 'bg-gray-100 dark:bg-gray-700'
+         }`}>
+           <ReactMarkdown>{message.content}</ReactMarkdown>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+7. ChatInput 컴포넌트
+   ```tsx
+   export function ChatInput({ value, onChange, onSend, isLoading }: Props) {
+     return (
+       <div className="border-t p-4">
+         <div className="flex gap-2">
+           <Input
+             value={value}
+             onChange={(e) => onChange(e.target.value)}
+             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && onSend()}
+             placeholder="메시지를 입력하세요..."
+             disabled={isLoading}
+           />
+           <Button onClick={onSend} disabled={isLoading || !value.trim()}>
+             {isLoading ? <Spinner /> : <Send />}
+           </Button>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 채팅 메시지 전송 → 응답 수신
+- [ ] 스트리밍 응답 실시간 표시
+- [ ] 대화 히스토리 유지 (컨텍스트)
+- [ ] 마크다운 렌더링 (코드 블록 등)
+- [ ] 로딩 상태 표시
+- [ ] 자동 스크롤 (새 메시지 시)
+- [ ] Enter 키로 메시지 전송
+
+[참고 자료]
+- Server-Sent Events: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+- React Markdown: https://github.com/remarkjs/react-markdown

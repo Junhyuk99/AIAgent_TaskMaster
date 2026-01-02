@@ -1,0 +1,113 @@
+================================================================================
+TASK #002: React 프로젝트 초기 설정
+================================================================================
+
+[기본 정보]
+- ID: 2
+- 우선순위: high
+- 복잡도: 3/10
+- 상태: pending
+- 의존성: 없음 (시작 태스크)
+
+[설명]
+Vite + React + TypeScript 프로젝트 생성, Tailwind CSS 설정,
+기본 라우팅 구성 (React Router)
+
+[상세 구현 가이드]
+1. Vite로 React 프로젝트 생성
+   ```bash
+   npm create vite@latest frontend -- --template react-ts
+   cd frontend
+   npm install
+   ```
+
+2. Tailwind CSS 설치 및 설정
+   ```bash
+   npm install -D tailwindcss postcss autoprefixer
+   npx tailwindcss init -p
+   ```
+
+   tailwind.config.js 설정:
+   ```javascript
+   export default {
+     content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+     darkMode: 'class',
+     theme: { extend: {} },
+     plugins: [],
+   }
+   ```
+
+3. 핵심 라이브러리 설치
+   ```bash
+   # 라우팅
+   npm install react-router-dom
+
+   # 상태 관리
+   npm install zustand
+
+   # HTTP 클라이언트
+   npm install axios
+
+   # 폼 관리 및 유효성 검증
+   npm install react-hook-form zod @hookform/resolvers
+
+   # UI 유틸리티
+   npm install clsx tailwind-merge
+   npm install lucide-react  # 아이콘
+   ```
+
+4. ESLint, Prettier 설정
+   ```bash
+   npm install -D eslint-config-prettier prettier
+   ```
+
+5. 프로젝트 구조 설정
+   ```
+   src/
+   ├── components/     # 재사용 컴포넌트
+   │   ├── ui/         # 기본 UI 컴포넌트
+   │   └── layout/     # 레이아웃 컴포넌트
+   ├── pages/          # 페이지 컴포넌트
+   ├── hooks/          # 커스텀 훅
+   ├── stores/         # Zustand 스토어
+   ├── services/       # API 서비스
+   ├── types/          # TypeScript 타입
+   ├── utils/          # 유틸리티 함수
+   └── lib/            # 외부 라이브러리 설정
+   ```
+
+6. 기본 라우터 설정
+   ```typescript
+   // src/App.tsx
+   import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+   function App() {
+     return (
+       <BrowserRouter>
+         <Routes>
+           <Route path="/" element={<Home />} />
+           <Route path="/login" element={<Login />} />
+           <Route path="/dashboard" element={<Dashboard />} />
+           <Route path="/agents" element={<Agents />} />
+           <Route path="/agents/:id/edit" element={<AgentEdit />} />
+           <Route path="/functions" element={<Functions />} />
+           <Route path="/knowledge" element={<Knowledge />} />
+           <Route path="/settings/llm" element={<LlmSettings />} />
+         </Routes>
+       </BrowserRouter>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] npm run dev로 개발 서버 정상 기동 확인
+- [ ] 기본 라우팅 동작 확인 (각 경로 접근 가능)
+- [ ] Tailwind CSS 스타일 적용 확인
+- [ ] TypeScript 컴파일 에러 없음
+- [ ] ESLint 경고/에러 없음
+
+[참고 자료]
+- Vite: https://vitejs.dev/
+- React Router: https://reactrouter.com/
+- Tailwind CSS: https://tailwindcss.com/
+- Zustand: https://zustand-demo.pmnd.rs/

@@ -1,0 +1,273 @@
+================================================================================
+TASK #028: 외부 API 엔드포인트 구현
+================================================================================
+
+[기본 정보]
+- ID: 28
+- 우선순위: high
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #27 (API 키 관리), Task #16 (Function Calling), Task #23 (RAG 검색)
+
+[설명]
+배포된 에이전트를 외부에서 호출할 수 있는 API 구현
+
+[상세 구현 가이드]
+1. ExternalApiController
+   ```java
+   @RestController
+   @RequestMapping("/api/v1")
+   public class ExternalApiController {
+
+       @PostMapping("/chat/{agentId}")
+       public ResponseEntity<ExternalChatResponse> chat(
+           @PathVariable Long agentId,
+           @RequestBody ExternalChatRequest request,
+           @RequestHeader(value = "X-API-Key", required = false) String apiKeyHeader,
+           @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+           // API 키 인증
+           String apiKey = extractApiKey(apiKeyHeader, authHeader);
+           ApiKey validatedKey = apiKeyService.validateApiKey(apiKey);
+           Long userId = validatedKey.getUser().getId();
+
+           // 에이전트 소유권 확인
+           Agent agent = agentService.getAgentWithOwnerCheck(agentId, userId);
+
+           // 채팅 처리
+           ChatMessageResponse response = chatService.chat(agentId, toChatRequest(request), userId);
+
+           // 사용량 로깅
+           usageService.logApiUsage(validatedKey, agentId, response);
+
+           return ResponseEntity.ok(toExternalResponse(response));
+       }
+
+       @PostMapping("/chat/{agentId}/stream")
+       public Flux<ServerSentEvent<String>> chatStream(
+           @PathVariable Long agentId,
+           @RequestBody ExternalChatRequest request,
+           @RequestHeader("X-API-Key") String apiKey) {
+
+           // 인증 및 처리...
+
+           return chatService.chatStream(agentId, toChatRequest(request), userId)
+               .map(content -> ServerSentEvent.<String>builder()
+                   .data(objectMapper.writeValueAsString(Map.of("content", content)))
+                   .build());
+       }
+   }
+   ```
+
+2. ExternalChatRequest/Response
+   ```java
+   @Data
+   public class ExternalChatRequest {
+       @NotBlank
+       private String message;
+
+       private String conversationId;  // 대화 이어가기 (옵션)
+
+       private List<ExternalMessage> history;  // 클라이언트 측 히스토리 (옵션)
+
+       private Boolean stream = false;  // 스트리밍 응답 여부
+
+       private Map<String, Object> metadata;  // 추가 메타데이터
+   }
+
+   @Data
+   public class ExternalMessage {
+       private String role;  // "user" 또는 "assistant"
+       private String content;
+   }
+
+   @Data
+   @Builder
+   public class ExternalChatResponse {
+       private String id;  // 응답 ID
+       private String conversationId;
+       private String content;
+       private List<ExternalSource> sources;  // RAG 소스
+       private ExternalUsage usage;
+       private Long timestamp;
+   }
+
+   @Data
+   @Builder
+   public class ExternalSource {
+       private String knowledgeBase;
+       private String document;
+       private Double relevance;
+       private String preview;
+   }
+
+   @Data
+   @Builder
+   public class ExternalUsage {
+       private Integer promptTokens;
+       private Integer completionTokens;
+       private Integer totalTokens;
+   }
+   ```
+
+3. 에러 응답 표준화
+   ```java
+   @Data
+   @Builder
+   public class ExternalErrorResponse {
+       private String error;
+       private String message;
+       private Integer status;
+       private Long timestamp;
+   }
+
+   @RestControllerAdvice
+   public class ExternalApiExceptionHandler {
+
+       @ExceptionHandler(InvalidApiKeyException.class)
+       public ResponseEntity<ExternalErrorResponse> handleInvalidApiKey(InvalidApiKeyException e) {
+           return ResponseEntity.status(401).body(ExternalErrorResponse.builder()
+               .error("unauthorized")
+               .message("Invalid API key")
+               .status(401)
+               .timestamp(System.currentTimeMillis())
+               .build());
+       }
+
+       @ExceptionHandler(AgentNotFoundException.class)
+       public ResponseEntity<ExternalErrorResponse> handleAgentNotFound(AgentNotFoundException e) {
+           return ResponseEntity.status(404).body(ExternalErrorResponse.builder()
+               .error("not_found")
+               .message("Agent not found")
+               .status(404)
+               .timestamp(System.currentTimeMillis())
+               .build());
+       }
+
+       @ExceptionHandler(RateLimitExceededException.class)
+       public ResponseEntity<ExternalErrorResponse> handleRateLimit(RateLimitExceededException e) {
+           return ResponseEntity.status(429).body(ExternalErrorResponse.builder()
+               .error("rate_limit_exceeded")
+               .message("Too many requests. Please try again later.")
+               .status(429)
+               .timestamp(System.currentTimeMillis())
+               .build());
+       }
+   }
+   ```
+
+4. 사용량 로깅
+   ```java
+   @Service
+   public class UsageService {
+
+       public void logApiUsage(ApiKey apiKey, Long agentId, ChatMessageResponse response) {
+           UsageLog log = UsageLog.builder()
+               .apiKeyId(apiKey.getId())
+               .userId(apiKey.getUser().getId())
+               .agentId(agentId)
+               .endpoint("/api/v1/chat")
+               .promptTokens(response.getUsage().getPromptTokens())
+               .completionTokens(response.getUsage().getCompletionTokens())
+               .totalTokens(response.getUsage().getTotalTokens())
+               .latencyMs(response.getLatency())
+               .createdAt(LocalDateTime.now())
+               .build();
+
+           usageLogRepository.save(log);
+       }
+   }
+   ```
+
+5. Rate Limiting (API 키별)
+   ```java
+   @Component
+   public class ApiKeyRateLimiter {
+
+       private final Map<Long, Bucket> buckets = new ConcurrentHashMap<>();
+
+       public void checkRateLimit(ApiKey apiKey) {
+           Bucket bucket = buckets.computeIfAbsent(apiKey.getId(), this::createBucket);
+
+           if (!bucket.tryConsume(1)) {
+               throw new RateLimitExceededException("Rate limit exceeded");
+           }
+       }
+
+       private Bucket createBucket(Long apiKeyId) {
+           // 분당 60 요청
+           Bandwidth limit = Bandwidth.classic(60, Refill.intervally(60, Duration.ofMinutes(1)));
+           return Bucket.builder().addLimit(limit).build();
+       }
+   }
+   ```
+
+6. curl 사용 예시 (문서용)
+   ```bash
+   # 기본 요청
+   curl -X POST https://your-domain.com/api/v1/chat/123 \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: ak_your_api_key_here" \
+     -d '{
+       "message": "안녕하세요, 오늘 날씨 어때요?"
+     }'
+
+   # 대화 이어가기
+   curl -X POST https://your-domain.com/api/v1/chat/123 \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: ak_your_api_key_here" \
+     -d '{
+       "message": "좀 더 자세히 알려주세요",
+       "conversationId": "conv_abc123"
+     }'
+
+   # 스트리밍 응답
+   curl -X POST https://your-domain.com/api/v1/chat/123/stream \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: ak_your_api_key_here" \
+     -N \
+     -d '{
+       "message": "긴 글을 작성해주세요"
+     }'
+   ```
+
+7. SDK 예시 (JavaScript)
+   ```javascript
+   // SDK 사용 예시 (npm package로 제공 가능)
+   import { AIAgentClient } from '@your-org/ai-agent-sdk';
+
+   const client = new AIAgentClient({
+     apiKey: 'ak_your_api_key_here',
+     baseUrl: 'https://your-domain.com',
+   });
+
+   // 기본 채팅
+   const response = await client.chat(123, {
+     message: '안녕하세요!',
+   });
+
+   console.log(response.content);
+
+   // 스트리밍
+   const stream = await client.chatStream(123, {
+     message: '긴 글을 작성해주세요',
+   });
+
+   for await (const chunk of stream) {
+     process.stdout.write(chunk.content);
+   }
+   ```
+
+[테스트 기준]
+- [ ] API 키로 채팅 요청 성공
+- [ ] 잘못된 API 키 → 401 응답
+- [ ] 존재하지 않는 에이전트 → 404 응답
+- [ ] 스트리밍 응답 동작
+- [ ] conversationId로 대화 이어가기
+- [ ] RAG 소스 정보 응답에 포함
+- [ ] 사용량 로그 저장 확인
+- [ ] Rate Limit 초과 시 429 응답
+
+[참고 자료]
+- OpenAI API Reference: https://platform.openai.com/docs/api-reference
+- REST API Best Practices: https://restfulapi.net/

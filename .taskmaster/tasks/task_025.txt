@@ -1,0 +1,251 @@
+================================================================================
+TASK #025: 에이전트-지식 베이스 연결 기능 구현
+================================================================================
+
+[기본 정보]
+- ID: 25
+- 우선순위: medium
+- 복잡도: 4/10
+- 상태: pending
+- 의존성: Task #10 (에이전트 관리 UI), Task #24 (지식 관리 UI 페이지)
+
+[설명]
+에이전트에 지식 베이스를 연결/해제하는 UI 및 API 구현
+
+[상세 구현 가이드]
+1. 백엔드 API
+   ```java
+   @RestController
+   @RequestMapping("/api/agents")
+   public class AgentController {
+
+       @GetMapping("/{id}/knowledge-bases")
+       public List<KnowledgeBaseSummary> getAgentKnowledgeBases(@PathVariable Long id);
+
+       @PutMapping("/{id}/knowledge-bases")
+       public AgentResponse updateAgentKnowledgeBases(
+           @PathVariable Long id,
+           @RequestBody UpdateKnowledgeBasesRequest request);
+   }
+
+   @Data
+   public class UpdateKnowledgeBasesRequest {
+       @NotNull
+       private List<Long> knowledgeBaseIds;
+   }
+
+   @Data
+   public class KnowledgeBaseSummary {
+       private Long id;
+       private String name;
+       private String description;
+       private Integer documentCount;
+       private Integer totalChunks;
+   }
+   ```
+
+2. AgentService 지식 베이스 연결 로직
+   ```java
+   @Transactional
+   public AgentResponse updateAgentKnowledgeBases(Long agentId,
+                                                   List<Long> kbIds,
+                                                   Long userId) {
+       Agent agent = getAgentWithOwnerCheck(agentId, userId);
+
+       // 모든 지식 베이스 ID가 사용자 소유인지 확인
+       List<KnowledgeBase> knowledgeBases =
+           knowledgeBaseRepository.findAllByIdInAndUserId(kbIds, userId);
+
+       if (knowledgeBases.size() != kbIds.size()) {
+           throw new BadRequestException("일부 지식 베이스를 찾을 수 없습니다");
+       }
+
+       // 기존 연결 제거 후 새로 설정
+       agent.getKnowledgeBases().clear();
+       agent.getKnowledgeBases().addAll(new HashSet<>(knowledgeBases));
+
+       return toResponse(agentRepository.save(agent));
+   }
+   ```
+
+3. 프론트엔드 KnowledgeTab 컴포넌트
+   ```tsx
+   // src/components/agents/tabs/KnowledgeTab.tsx
+   export function KnowledgeTab({ agent }: Props) {
+     const { data: allKnowledgeBases } = useKnowledgeBases();
+     const updateKnowledgeBases = useUpdateAgentKnowledgeBases();
+
+     const [selectedIds, setSelectedIds] = useState<Set<number>>(
+       new Set(agent.knowledgeBases.map(kb => kb.id))
+     );
+
+     const handleToggle = (kbId: number) => {
+       setSelectedIds(prev => {
+         const next = new Set(prev);
+         if (next.has(kbId)) {
+           next.delete(kbId);
+         } else {
+           next.add(kbId);
+         }
+         return next;
+       });
+     };
+
+     const handleSave = () => {
+       updateKnowledgeBases.mutate({
+         agentId: agent.id,
+         knowledgeBaseIds: Array.from(selectedIds),
+       });
+     };
+
+     return (
+       <div className="space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+             <p className="text-gray-500">
+               에이전트가 참조할 지식 베이스를 선택하세요.
+             </p>
+             <p className="text-sm text-gray-400">
+               선택된 지식 베이스의 문서를 기반으로 질문에 답변합니다 (RAG).
+             </p>
+           </div>
+           <Button onClick={handleSave} disabled={updateKnowledgeBases.isPending}>
+             저장
+           </Button>
+         </div>
+
+         {allKnowledgeBases?.length === 0 ? (
+           <EmptyState
+             icon={<Database />}
+             title="지식 베이스가 없습니다"
+             description="먼저 지식 베이스를 생성하고 문서를 업로드하세요."
+             action={
+               <Button as={Link} to="/knowledge">
+                 지식 베이스 만들기
+               </Button>
+             }
+           />
+         ) : (
+           <div className="grid grid-cols-2 gap-4">
+             {allKnowledgeBases?.map(kb => (
+               <KnowledgeBaseSelectCard
+                 key={kb.id}
+                 knowledgeBase={kb}
+                 isSelected={selectedIds.has(kb.id)}
+                 onToggle={() => handleToggle(kb.id)}
+               />
+             ))}
+           </div>
+         )}
+       </div>
+     );
+   }
+   ```
+
+4. KnowledgeBaseSelectCard 컴포넌트
+   ```tsx
+   export function KnowledgeBaseSelectCard({ knowledgeBase, isSelected, onToggle }: Props) {
+     return (
+       <div
+         className={`
+           border rounded-lg p-4 cursor-pointer transition-all
+           ${isSelected
+             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+             : 'border-gray-200 hover:border-gray-300'}
+         `}
+         onClick={onToggle}
+       >
+         <div className="flex items-start gap-3">
+           <Checkbox checked={isSelected} onChange={onToggle} />
+           <div className="flex-1">
+             <h4 className="font-medium">{knowledgeBase.name}</h4>
+             <p className="text-sm text-gray-500 mt-1">{knowledgeBase.description}</p>
+
+             <div className="flex gap-4 mt-3 text-sm text-gray-400">
+               <span>{knowledgeBase.documentCount}개 문서</span>
+               <span>{knowledgeBase.totalChunks}개 청크</span>
+             </div>
+           </div>
+         </div>
+       </div>
+     );
+   }
+   ```
+
+5. 연결된 지식 베이스 표시 (에이전트 카드)
+   ```tsx
+   // AgentCard에서 연결된 지식 베이스 표시
+   <div className="flex gap-2 mt-3 text-xs">
+     <Badge>{agent.modelName}</Badge>
+     {agent.functions.length > 0 && (
+       <Badge variant="outline">{agent.functions.length} 함수</Badge>
+     )}
+     {agent.knowledgeBases.length > 0 && (
+       <Badge variant="outline" className="text-purple-600">
+         {agent.knowledgeBases.length} 지식베이스
+       </Badge>
+     )}
+   </div>
+   ```
+
+6. React Query 훅
+   ```tsx
+   export function useUpdateAgentKnowledgeBases() {
+     const queryClient = useQueryClient();
+
+     return useMutation({
+       mutationFn: ({ agentId, knowledgeBaseIds }: {
+         agentId: number;
+         knowledgeBaseIds: number[];
+       }) => agentService.updateKnowledgeBases(agentId, knowledgeBaseIds),
+       onSuccess: (_, { agentId }) => {
+         queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
+         toast.success('지식 베이스 연결이 업데이트되었습니다');
+       },
+     });
+   }
+   ```
+
+7. 지식 베이스 상세에서 사용 에이전트 표시
+   ```tsx
+   // KnowledgeDetailPage에서
+   export function UsedByAgents({ knowledgeBase }: Props) {
+     const { data: agents } = useAgentsUsingKnowledgeBase(knowledgeBase.id);
+
+     if (!agents || agents.length === 0) {
+       return (
+         <p className="text-sm text-gray-400">
+           이 지식 베이스를 사용하는 에이전트가 없습니다.
+         </p>
+       );
+     }
+
+     return (
+       <div>
+         <p className="text-sm text-gray-500 mb-2">사용 중인 에이전트:</p>
+         <div className="flex flex-wrap gap-2">
+           {agents.map(agent => (
+             <Link
+               key={agent.id}
+               to={`/agents/${agent.id}/edit`}
+               className="px-2 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200"
+             >
+               {agent.name}
+             </Link>
+           ))}
+         </div>
+       </div>
+     );
+   }
+   ```
+
+[테스트 기준]
+- [ ] 지식 베이스 목록 표시 (연결됨/연결안됨 구분)
+- [ ] 체크박스로 지식 베이스 선택/해제
+- [ ] 저장 버튼 클릭 → API 호출 → 반영
+- [ ] 지식 베이스 없을 때 안내 메시지
+- [ ] 에이전트 카드에 연결된 지식 베이스 수 표시
+- [ ] 연결된 에이전트에서 RAG 동작 확인
+
+[참고 자료]
+- React Query Mutations: https://tanstack.com/query/latest/docs/framework/react/guides/mutations

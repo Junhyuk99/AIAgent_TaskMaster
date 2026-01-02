@@ -1,0 +1,304 @@
+================================================================================
+TASK #031: 사용량 통계 기능 구현
+================================================================================
+
+[기본 정보]
+- ID: 31
+- 우선순위: low
+- 복잡도: 5/10
+- 상태: pending
+- 의존성: Task #28 (외부 API 엔드포인트)
+
+[설명]
+API 호출 통계, 토큰 사용량, 대화 수 등 모니터링 기능
+
+[상세 구현 가이드]
+1. UsageLog 엔티티
+   ```java
+   @Entity
+   @Table(indexes = {
+       @Index(name = "idx_usage_user_date", columnList = "userId, createdAt"),
+       @Index(name = "idx_usage_agent_date", columnList = "agentId, createdAt")
+   })
+   public class UsageLog {
+       @Id @GeneratedValue
+       private Long id;
+
+       private Long userId;
+       private Long agentId;
+       private Long apiKeyId;
+
+       private String endpoint;
+       private String method;
+
+       private Integer promptTokens;
+       private Integer completionTokens;
+       private Integer totalTokens;
+
+       private Long latencyMs;
+
+       private Boolean success;
+       private String errorCode;
+
+       private LocalDateTime createdAt;
+   }
+   ```
+
+2. UsageController API
+   ```java
+   @RestController
+   @RequestMapping("/api/usage")
+   public class UsageController {
+
+       @GetMapping("/summary")
+       public UsageSummary getSummary(
+           @RequestParam(defaultValue = "7d") String period);
+
+       @GetMapping("/daily")
+       public List<DailyUsage> getDailyUsage(
+           @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+           @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to);
+
+       @GetMapping("/agents/{agentId}")
+       public AgentUsage getAgentUsage(
+           @PathVariable Long agentId,
+           @RequestParam(defaultValue = "7d") String period);
+
+       @GetMapping("/export")
+       public ResponseEntity<Resource> exportUsage(
+           @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+           @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to,
+           @RequestParam(defaultValue = "csv") String format);
+   }
+   ```
+
+3. UsageService 구현
+   ```java
+   @Service
+   public class UsageService {
+
+       public UsageSummary getSummary(Long userId, String period) {
+           LocalDateTime from = calculateFromDate(period);
+
+           List<UsageLog> logs = usageLogRepository.findByUserIdAndCreatedAtAfter(userId, from);
+
+           return UsageSummary.builder()
+               .totalRequests(logs.size())
+               .successfulRequests((int) logs.stream().filter(UsageLog::getSuccess).count())
+               .failedRequests((int) logs.stream().filter(l -> !l.getSuccess()).count())
+               .totalTokens(logs.stream().mapToInt(UsageLog::getTotalTokens).sum())
+               .promptTokens(logs.stream().mapToInt(UsageLog::getPromptTokens).sum())
+               .completionTokens(logs.stream().mapToInt(UsageLog::getCompletionTokens).sum())
+               .averageLatency(logs.stream().mapToLong(UsageLog::getLatencyMs).average().orElse(0))
+               .uniqueAgents((int) logs.stream().map(UsageLog::getAgentId).distinct().count())
+               .period(period)
+               .build();
+       }
+
+       public List<DailyUsage> getDailyUsage(Long userId, LocalDate from, LocalDate to) {
+           return usageLogRepository.getDailyStats(userId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+       }
+
+       @Transactional
+       public void logUsage(UsageLogRequest request) {
+           UsageLog log = UsageLog.builder()
+               .userId(request.getUserId())
+               .agentId(request.getAgentId())
+               .apiKeyId(request.getApiKeyId())
+               .endpoint(request.getEndpoint())
+               .promptTokens(request.getPromptTokens())
+               .completionTokens(request.getCompletionTokens())
+               .totalTokens(request.getPromptTokens() + request.getCompletionTokens())
+               .latencyMs(request.getLatencyMs())
+               .success(request.getSuccess())
+               .errorCode(request.getErrorCode())
+               .createdAt(LocalDateTime.now())
+               .build();
+
+           usageLogRepository.save(log);
+       }
+   }
+   ```
+
+4. Repository 집계 쿼리
+   ```java
+   public interface UsageLogRepository extends JpaRepository<UsageLog, Long> {
+
+       @Query("""
+           SELECT new com.aiagent.dto.DailyUsage(
+               CAST(u.createdAt AS LocalDate),
+               COUNT(u),
+               SUM(u.totalTokens),
+               SUM(CASE WHEN u.success = true THEN 1 ELSE 0 END),
+               AVG(u.latencyMs)
+           )
+           FROM UsageLog u
+           WHERE u.userId = :userId
+           AND u.createdAt BETWEEN :from AND :to
+           GROUP BY CAST(u.createdAt AS LocalDate)
+           ORDER BY CAST(u.createdAt AS LocalDate)
+           """)
+       List<DailyUsage> getDailyStats(Long userId, LocalDateTime from, LocalDateTime to);
+
+       @Query("""
+           SELECT new com.aiagent.dto.AgentUsage(
+               u.agentId,
+               COUNT(u),
+               SUM(u.totalTokens),
+               AVG(u.latencyMs)
+           )
+           FROM UsageLog u
+           WHERE u.userId = :userId
+           AND u.createdAt > :from
+           GROUP BY u.agentId
+           ORDER BY COUNT(u) DESC
+           """)
+       List<AgentUsage> getUsageByAgent(Long userId, LocalDateTime from);
+   }
+   ```
+
+5. DTO
+   ```java
+   @Data
+   @Builder
+   public class UsageSummary {
+       private Integer totalRequests;
+       private Integer successfulRequests;
+       private Integer failedRequests;
+       private Integer totalTokens;
+       private Integer promptTokens;
+       private Integer completionTokens;
+       private Double averageLatency;
+       private Integer uniqueAgents;
+       private String period;
+   }
+
+   @Data
+   @AllArgsConstructor
+   public class DailyUsage {
+       private LocalDate date;
+       private Long requestCount;
+       private Long totalTokens;
+       private Long successCount;
+       private Double avgLatency;
+   }
+
+   @Data
+   @AllArgsConstructor
+   public class AgentUsage {
+       private Long agentId;
+       private String agentName;  // 조인 필요
+       private Long requestCount;
+       private Long totalTokens;
+       private Double avgLatency;
+   }
+   ```
+
+6. 프론트엔드 대시보드 통계
+   ```tsx
+   export function UsageDashboard() {
+     const [period, setPeriod] = useState('7d');
+     const { data: summary } = useUsageSummary(period);
+     const { data: daily } = useDailyUsage(period);
+
+     return (
+       <div className="p-6">
+         <header className="flex justify-between items-center mb-6">
+           <h1>사용량 통계</h1>
+           <Select value={period} onChange={setPeriod}>
+             <option value="7d">최근 7일</option>
+             <option value="30d">최근 30일</option>
+             <option value="90d">최근 90일</option>
+           </Select>
+         </header>
+
+         {/* 요약 카드 */}
+         <div className="grid grid-cols-4 gap-4 mb-8">
+           <StatCard
+             title="총 요청"
+             value={summary?.totalRequests}
+             icon={<Activity />}
+           />
+           <StatCard
+             title="성공률"
+             value={`${((summary?.successfulRequests / summary?.totalRequests) * 100).toFixed(1)}%`}
+             icon={<CheckCircle />}
+           />
+           <StatCard
+             title="총 토큰"
+             value={formatNumber(summary?.totalTokens)}
+             icon={<Zap />}
+           />
+           <StatCard
+             title="평균 응답 시간"
+             value={`${summary?.averageLatency?.toFixed(0)}ms`}
+             icon={<Clock />}
+           />
+         </div>
+
+         {/* 일별 차트 */}
+         <div className="bg-white rounded-lg shadow p-6 mb-8">
+           <h2 className="text-lg font-semibold mb-4">일별 사용량</h2>
+           <ResponsiveContainer width="100%" height={300}>
+             <LineChart data={daily}>
+               <CartesianGrid strokeDasharray="3 3" />
+               <XAxis dataKey="date" tickFormatter={formatDate} />
+               <YAxis yAxisId="left" />
+               <YAxis yAxisId="right" orientation="right" />
+               <Tooltip />
+               <Legend />
+               <Line yAxisId="left" type="monotone" dataKey="requestCount" name="요청 수" stroke="#8884d8" />
+               <Line yAxisId="right" type="monotone" dataKey="totalTokens" name="토큰" stroke="#82ca9d" />
+             </LineChart>
+           </ResponsiveContainer>
+         </div>
+
+         {/* 에이전트별 사용량 */}
+         <AgentUsageTable period={period} />
+       </div>
+     );
+   }
+   ```
+
+7. CSV 내보내기
+   ```java
+   public ResponseEntity<Resource> exportUsage(Long userId, LocalDate from, LocalDate to, String format) {
+       List<UsageLog> logs = usageLogRepository.findByUserIdAndCreatedAtBetween(
+           userId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+
+       if ("csv".equals(format)) {
+           StringBuilder csv = new StringBuilder();
+           csv.append("Date,Agent ID,Tokens,Latency (ms),Success\n");
+
+           for (UsageLog log : logs) {
+               csv.append(String.format("%s,%d,%d,%d,%s\n",
+                   log.getCreatedAt().toLocalDate(),
+                   log.getAgentId(),
+                   log.getTotalTokens(),
+                   log.getLatencyMs(),
+                   log.getSuccess()));
+           }
+
+           return ResponseEntity.ok()
+               .contentType(MediaType.parseMediaType("text/csv"))
+               .header(HttpHeaders.CONTENT_DISPOSITION,
+                   "attachment; filename=\"usage_" + from + "_" + to + ".csv\"")
+               .body(new ByteArrayResource(csv.toString().getBytes()));
+       }
+
+       throw new BadRequestException("지원하지 않는 형식: " + format);
+   }
+   ```
+
+[테스트 기준]
+- [ ] API 호출 시 UsageLog 저장
+- [ ] 사용량 요약 API 응답 확인
+- [ ] 일별 통계 데이터 확인
+- [ ] 에이전트별 통계 확인
+- [ ] 기간 필터링 동작
+- [ ] 차트 렌더링
+- [ ] CSV 내보내기
+
+[참고 자료]
+- Recharts: https://recharts.org/
+- Spring JPA @Query: https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#jpa.query-methods.at-query
