@@ -50,13 +50,15 @@ describe('AgentCard', () => {
 
   it('shows Active badge when agent is active', () => {
     render(<AgentCard agent={mockAgent} {...mockHandlers} />);
-    expect(screen.getByText('Active')).toBeInTheDocument();
+    // In test environment, i18n returns the key directly
+    expect(screen.getByText('common.active')).toBeInTheDocument();
   });
 
   it('shows Inactive badge when agent is not active', () => {
     const inactiveAgent = { ...mockAgent, isActive: false };
     render(<AgentCard agent={inactiveAgent} {...mockHandlers} />);
-    expect(screen.getByText('Inactive')).toBeInTheDocument();
+    // In test environment, i18n returns the key directly
+    expect(screen.getByText('common.inactive')).toBeInTheDocument();
   });
 
   it('displays function count badge', () => {
@@ -71,7 +73,8 @@ describe('AgentCard', () => {
 
   it('calls onToggleActive when status button is clicked', () => {
     render(<AgentCard agent={mockAgent} {...mockHandlers} />);
-    fireEvent.click(screen.getByText('Active'));
+    // In test environment, i18n returns the key directly
+    fireEvent.click(screen.getByText('common.active'));
     expect(mockHandlers.onToggleActive).toHaveBeenCalledWith(1);
   });
 
@@ -93,7 +96,8 @@ describe('AgentCard', () => {
 
   it('has edit link with correct URL', () => {
     render(<AgentCard agent={mockAgent} {...mockHandlers} />);
-    const editLink = screen.getByText('Edit');
+    // In test environment, i18n returns the key directly
+    const editLink = screen.getByText('agents.agentSettings');
     expect(editLink).toHaveAttribute('href', '/agents/1/edit');
   });
 });
