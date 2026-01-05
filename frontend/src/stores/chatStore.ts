@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage, DocumentSource } from '../services/chatService';
+import type { ChatMessage, DocumentSource, FunctionExecution } from '../services/chatService';
 
 interface DisplayMessage extends ChatMessage {
   sources?: DocumentSource[];
+  functionExecutions?: FunctionExecution[];
 }
 
 interface AgentChatState {

@@ -83,8 +83,13 @@ public class RagService {
 
         for (KnowledgeBase kb : knowledgeBases) {
             if (!kb.getIsActive() || kb.getCollectionName() == null) {
+                log.debug("Skipping KB {} (active={}, collection={})",
+                        kb.getName(), kb.getIsActive(), kb.getCollectionName());
                 continue;
             }
+
+            log.info("Searching knowledge base '{}' (id={}) with collection '{}'",
+                    kb.getName(), kb.getId(), kb.getCollectionName());
 
             try {
                 List<VectorSearchResult> results = vectorStore.search(
@@ -93,6 +98,8 @@ public class RagService {
                         effectiveTopK,
                         null // No metadata filter for now
                 );
+
+                log.info("KB '{}' returned {} results", kb.getName(), results.size());
 
                 for (VectorSearchResult result : results) {
                     if (result.getScore() >= effectiveMinScore) {

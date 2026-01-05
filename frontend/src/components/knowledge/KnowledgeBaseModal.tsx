@@ -27,7 +27,7 @@ export default function KnowledgeBaseModal({
   const [description, setDescription] = useState('');
   const [chunkSize, setChunkSize] = useState(500);
   const [chunkOverlap, setChunkOverlap] = useState(50);
-  const [chunkingStrategy, setChunkingStrategy] = useState<ChunkingStrategy>('FIXED_SIZE');
+  const [chunkingStrategy, setChunkingStrategy] = useState<ChunkingStrategy>('PARAGRAPH');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { createKnowledgeBase, updateKnowledgeBase, isLoading, error, clearError } = useKnowledgeStore();
@@ -39,7 +39,7 @@ export default function KnowledgeBaseModal({
     setDescription('');
     setChunkSize(500);
     setChunkOverlap(50);
-    setChunkingStrategy('FIXED_SIZE');
+    setChunkingStrategy('PARAGRAPH');
     setErrors({});
   }, []);
 

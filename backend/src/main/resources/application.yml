@@ -9,15 +9,10 @@ spring:
           google:
             client-id: ${GOOGLE_CLIENT_ID:}
             client-secret: ${GOOGLE_CLIENT_SECRET:}
+            redirect-uri: ${OAUTH2_REDIRECT_BASE:http://localhost:8088}/login/oauth2/code/google
             scope:
               - email
               - profile
-          github:
-            client-id: ${GITHUB_CLIENT_ID:}
-            client-secret: ${GITHUB_CLIENT_SECRET:}
-            scope:
-              - user:email
-              - read:user
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:aiagent}
@@ -99,7 +94,7 @@ vectorstore:
 # RAG Configuration
 rag:
   default-top-k: ${RAG_TOP_K:5}
-  default-min-score: ${RAG_MIN_SCORE:0.5}
+  default-min-score: ${RAG_MIN_SCORE:0.7}
   max-context-length: ${RAG_MAX_CONTEXT_LENGTH:4000}
 
 # API Key Configuration

@@ -5,9 +5,11 @@ import com.aiagent.chunking.ChunkingConfig;
 import com.aiagent.chunking.TextChunk;
 import com.aiagent.embedding.EmbeddingService;
 import com.aiagent.entity.Document;
+import com.aiagent.entity.DocumentChunk;
 import com.aiagent.entity.KnowledgeBase;
 import com.aiagent.parser.DocumentParserFactory;
 import com.aiagent.parser.ParseResult;
+import com.aiagent.repository.DocumentChunkRepository;
 import com.aiagent.repository.DocumentRepository;
 import com.aiagent.service.storage.FileStorageService;
 import com.aiagent.vectorstore.VectorDocument;
@@ -33,6 +35,7 @@ public class DocumentProcessingService {
     private static final int BATCH_SIZE = 10;
 
     private final DocumentRepository documentRepository;
+    private final DocumentChunkRepository documentChunkRepository;
     private final FileStorageService fileStorageService;
     private final DocumentParserFactory parserFactory;
     private final ChunkerFactory chunkerFactory;
@@ -81,6 +84,7 @@ public class DocumentProcessingService {
             int totalChunks = chunks.size();
             int processedChunks = 0;
             List<VectorDocument> batchDocuments = new ArrayList<>();
+            List<DocumentChunk> batchChunks = new ArrayList<>();
 
             for (TextChunk chunk : chunks) {
                 try {
@@ -107,10 +111,25 @@ public class DocumentProcessingService {
 
                     batchDocuments.add(vectorDoc);
 
+                    // Create PostgreSQL chunk for hybrid search
+                    DocumentChunk dbChunk = DocumentChunk.builder()
+                            .chunkId(vectorId)
+                            .chunkIndex(chunk.getIndex())
+                            .content(chunk.getContent())
+                            .documentId(documentId)
+                            .documentName(ctx.fileName)
+                            .knowledgeBaseId(ctx.knowledgeBaseId)
+                            .startOffset(chunk.getStartOffset())
+                            .endOffset(chunk.getEndOffset())
+                            .build();
+                    batchChunks.add(dbChunk);
+
                     // Upsert in batches
                     if (batchDocuments.size() >= BATCH_SIZE) {
                         vectorStore.upsert(ctx.collectionName, batchDocuments);
+                        documentChunkRepository.saveAll(batchChunks);
                         batchDocuments.clear();
+                        batchChunks.clear();
                     }
 
                     processedChunks++;
@@ -124,6 +143,7 @@ public class DocumentProcessingService {
             // Upsert remaining documents
             if (!batchDocuments.isEmpty()) {
                 vectorStore.upsert(ctx.collectionName, batchDocuments);
+                documentChunkRepository.saveAll(batchChunks);
             }
 
             // 6. Update document as completed
@@ -153,6 +173,7 @@ public class DocumentProcessingService {
         int chunkOverlap;
         ChunkingConfig.ChunkingStrategyType chunkingStrategyType;
         String collectionName;
+        Long knowledgeBaseId;
     }
 
     @Transactional(readOnly = true)
@@ -169,6 +190,7 @@ public class DocumentProcessingService {
         ctx.chunkOverlap = kb.getChunkOverlap();
         ctx.chunkingStrategyType = mapChunkingStrategy(kb.getChunkingStrategy());
         ctx.collectionName = kb.getCollectionName();
+        ctx.knowledgeBaseId = kb.getId();
 
         return ctx;
     }

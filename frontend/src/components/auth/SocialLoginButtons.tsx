@@ -1,20 +1,15 @@
-import { useTranslation } from 'react-i18next';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-
 interface SocialLoginButtonsProps {
   disabled?: boolean;
 }
 
 export default function SocialLoginButtons({ disabled = false }: SocialLoginButtonsProps) {
-  const { t } = useTranslation();
-
   const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE_URL}/oauth2/authorize/google`;
+    // nginx를 통해 백엔드로 프록시됨
+    window.location.href = '/api/oauth2/authorize/google';
   };
 
   const handleGithubLogin = () => {
-    window.location.href = `${API_BASE_URL}/oauth2/authorize/github`;
+    alert('GitHub 로그인은 추후 서비스 예정입니다.');
   };
 
   return (
@@ -25,7 +20,7 @@ export default function SocialLoginButtons({ disabled = false }: SocialLoginButt
         </div>
         <div className="relative flex justify-center text-sm">
           <span className="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">
-            {t('auth.orContinueWith', 'Or continue with')}
+            또는 소셜 계정으로 계속하기
           </span>
         </div>
       </div>

@@ -5,8 +5,10 @@ import com.aiagent.dto.knowledge.KnowledgeBaseResponse;
 import com.aiagent.dto.knowledge.SearchRequest;
 import com.aiagent.dto.knowledge.SearchResult;
 import com.aiagent.embedding.EmbeddingService;
+import com.aiagent.entity.DocumentChunk;
 import com.aiagent.entity.KnowledgeBase;
 import com.aiagent.entity.User;
+import com.aiagent.repository.DocumentChunkRepository;
 import com.aiagent.repository.KnowledgeBaseRepository;
 import com.aiagent.repository.UserRepository;
 import com.aiagent.vectorstore.VectorSearchResult;
@@ -18,16 +20,23 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class KnowledgeBaseService {
 
+    private static final double VECTOR_WEIGHT = 0.7;
+    private static final double KEYWORD_WEIGHT = 0.3;
+
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final UserRepository userRepository;
+    private final DocumentChunkRepository documentChunkRepository;
     private final VectorStore vectorStore;
     private final EmbeddingService embeddingService;
 
@@ -154,35 +163,117 @@ public class KnowledgeBaseService {
                     .build();
         }
 
-        // Generate embedding for query
-        float[] queryEmbedding = embeddingService.embed(request.getQuery());
-
-        // Search vector store
         int topK = request.getTopK() != null ? request.getTopK() : 5;
+
+        // 1. Vector search (semantic)
+        float[] queryEmbedding = embeddingService.embed(request.getQuery());
         List<VectorSearchResult> vectorResults = vectorStore.search(
                 kb.getCollectionName(),
                 queryEmbedding,
-                topK,
+                topK * 2,  // Get more results for hybrid merge
                 request.getMetadataFilter()
         );
 
-        // Convert to SearchResult matches
-        List<SearchResult.SearchMatch> matches = vectorResults.stream()
-                .map(vr -> SearchResult.SearchMatch.builder()
-                        .chunkId(vr.getId())
-                        .content(vr.getContent())
-                        .score(vr.getScore())
-                        .metadata(vr.getMetadata())
+        // 2. Keyword search (PostgreSQL FTS)
+        List<DocumentChunk> keywordResults = documentChunkRepository.searchByKeyword(
+                kb.getId(),
+                request.getQuery(),
+                topK * 2
+        );
+
+        // If FTS returns nothing, try ILIKE fallback
+        if (keywordResults.isEmpty()) {
+            keywordResults = documentChunkRepository.searchByContentLike(
+                    kb.getId(),
+                    request.getQuery(),
+                    topK * 2
+            );
+        }
+
+        // 3. Hybrid merge with weighted scoring
+        Map<String, HybridResult> mergedResults = new HashMap<>();
+
+        // Add vector results
+        for (int i = 0; i < vectorResults.size(); i++) {
+            VectorSearchResult vr = vectorResults.get(i);
+            double vectorScore = vr.getScore() * VECTOR_WEIGHT;
+            mergedResults.put(vr.getId(), new HybridResult(
+                    vr.getId(),
+                    vr.getContent(),
+                    vectorScore,
+                    vr.getMetadata(),
+                    true,
+                    false
+            ));
+        }
+
+        // Add/merge keyword results
+        for (int i = 0; i < keywordResults.size(); i++) {
+            DocumentChunk chunk = keywordResults.get(i);
+            // Normalize keyword rank to score (higher rank = lower score)
+            double keywordScore = (1.0 - (i / (double) keywordResults.size())) * KEYWORD_WEIGHT;
+
+            HybridResult existing = mergedResults.get(chunk.getChunkId());
+            if (existing != null) {
+                // Boost score if found by both methods
+                existing.score += keywordScore;
+                existing.keywordMatch = true;
+            } else {
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("documentId", chunk.getDocumentId().toString());
+                metadata.put("documentName", chunk.getDocumentName());
+                metadata.put("chunkIndex", chunk.getChunkIndex());
+
+                mergedResults.put(chunk.getChunkId(), new HybridResult(
+                        chunk.getChunkId(),
+                        chunk.getContent(),
+                        keywordScore,
+                        metadata,
+                        false,
+                        true
+                ));
+            }
+        }
+
+        // Sort by combined score and take top K
+        List<SearchResult.SearchMatch> matches = mergedResults.values().stream()
+                .sorted((a, b) -> Double.compare(b.score, a.score))
+                .limit(topK)
+                .map(hr -> SearchResult.SearchMatch.builder()
+                        .chunkId(hr.chunkId)
+                        .content(hr.content)
+                        .score(hr.score)
+                        .metadata(hr.metadata)
                         .build())
                 .toList();
 
-        log.debug("Vector search for query '{}' returned {} results", request.getQuery(), matches.size());
+        log.debug("Hybrid search for query '{}': {} vector, {} keyword, {} merged results",
+                request.getQuery(), vectorResults.size(), keywordResults.size(), matches.size());
 
         return SearchResult.builder()
                 .query(request.getQuery())
                 .matches(matches)
                 .searchTimeMs(System.currentTimeMillis() - startTime)
                 .build();
+    }
+
+    private static class HybridResult {
+        String chunkId;
+        String content;
+        double score;
+        Map<String, Object> metadata;
+        boolean vectorMatch;
+        boolean keywordMatch;
+
+        HybridResult(String chunkId, String content, double score,
+                     Map<String, Object> metadata, boolean vectorMatch, boolean keywordMatch) {
+            this.chunkId = chunkId;
+            this.content = content;
+            this.score = score;
+            this.metadata = metadata;
+            this.vectorMatch = vectorMatch;
+            this.keywordMatch = keywordMatch;
+        }
     }
 
     @Transactional(readOnly = true)

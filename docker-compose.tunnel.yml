@@ -1,0 +1,129 @@
+version: '3.8'
+
+# Use this with Cloudflare Tunnel for external access (HTTPS handled by Cloudflare)
+# Usage: docker-compose -f docker-compose.tunnel.yml up -d
+
+services:
+  # Nginx Reverse Proxy (HTTP only - Cloudflare handles HTTPS)
+  nginx:
+    image: nginx:alpine
+    container_name: aiagent-nginx
+    ports:
+      - "8088:80"  # Use 8088 to avoid conflict with existing frontend
+    volumes:
+      - ./nginx/nginx.http.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiagent-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-aiagent}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+  # ChromaDB Vector Store
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: aiagent-chromadb
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+  # Ollama LLM Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aiagent-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+  # Spring Boot Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aiagent-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-aiagent}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-your-256-bit-secret-key-change-this-in-production}
+      JWT_EXPIRATION: 86400000
+      JWT_REFRESH_EXPIRATION: 604800000
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      OLLAMA_HOST: http://ollama:11434
+      EMBEDDING_MODEL: nomic-embed-text
+      EMBEDDING_DIMENSION: 768
+      # OAuth2 Configuration
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI:-http://localhost:8088/oauth2/callback}
+      OAUTH2_REDIRECT_BASE: ${OAUTH2_REDIRECT_BASE:-http://localhost:8088}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost,http://localhost:8088,https://season-manor-helping-balanced.trycloudflare.com}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: aiagent-frontend
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - aiagent-network
+
+networks:
+  aiagent-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  chroma_data:
+  uploads_data:
+  ollama_data:

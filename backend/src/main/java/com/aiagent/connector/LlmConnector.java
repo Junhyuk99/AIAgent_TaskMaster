@@ -60,4 +60,43 @@ public interface LlmConnector {
         // Default implementation - connectors should override this
         throw new UnsupportedOperationException("Function calling not supported by this connector");
     }
+
+    /**
+     * Chat with tools support, returning streaming LlmChatResult.
+     * This method first makes a non-streaming call to check for function calls,
+     * then streams the final response.
+     *
+     * @param model The model to use
+     * @param systemPrompt System prompt
+     * @param userMessage User message
+     * @param temperature Temperature setting
+     * @param maxTokens Maximum tokens
+     * @param tools List of tool definitions
+     * @return LlmChatResult containing function calls or a Flux for text streaming
+     */
+    default LlmChatResult chatWithToolsStreaming(String model, String systemPrompt, String userMessage,
+                                                  Double temperature, Integer maxTokens,
+                                                  List<Map<String, Object>> tools) {
+        // Default implementation falls back to non-streaming
+        return chatWithTools(model, systemPrompt, userMessage, temperature, maxTokens, tools);
+    }
+
+    /**
+     * Continue chat after function execution with streaming response.
+     *
+     * @param model The model to use
+     * @param systemPrompt System prompt
+     * @param conversationHistory Full conversation history including tool responses
+     * @param temperature Temperature setting
+     * @param maxTokens Maximum tokens
+     * @param tools List of tool definitions
+     * @return LlmChatResult with streaming text or more function calls
+     */
+    default LlmChatResult continueWithFunctionResultStreaming(String model, String systemPrompt,
+                                                               List<Map<String, Object>> conversationHistory,
+                                                               Double temperature, Integer maxTokens,
+                                                               List<Map<String, Object>> tools) {
+        // Default implementation falls back to non-streaming
+        return continueWithFunctionResult(model, systemPrompt, conversationHistory, temperature, maxTokens, tools);
+    }
 }

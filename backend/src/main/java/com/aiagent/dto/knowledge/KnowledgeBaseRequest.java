@@ -31,5 +31,5 @@ public class KnowledgeBaseRequest {
     private Integer chunkOverlap = 50;
 
     @Builder.Default
-    private KnowledgeBase.ChunkingStrategy chunkingStrategy = KnowledgeBase.ChunkingStrategy.FIXED_SIZE;
+    private KnowledgeBase.ChunkingStrategy chunkingStrategy = KnowledgeBase.ChunkingStrategy.PARAGRAPH;
 }

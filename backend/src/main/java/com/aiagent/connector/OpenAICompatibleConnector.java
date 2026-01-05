@@ -212,75 +212,87 @@ public class OpenAICompatibleConnector implements LlmConnector {
     }
 
     @Override
+    public LlmChatResult chatWithToolsStreaming(String model, String systemPrompt, String userMessage,
+                                                 Double temperature, Integer maxTokens,
+                                                 List<Map<String, Object>> tools) {
+        // First, make a non-streaming call to check for function calls
+        LlmChatResult initialResult = chatWithTools(model, systemPrompt, userMessage, temperature, maxTokens, tools);
+
+        // If function calls are requested, return them (not streaming)
+        if (initialResult.hasFunctionCalls()) {
+            return initialResult;
+        }
+
+        // If no function calls, return streaming response
+        Flux<String> stream = chatStream(model, systemPrompt, userMessage, temperature, maxTokens);
+        return LlmChatResult.streamingResponse(stream);
+    }
+
+    @Override
+    public LlmChatResult continueWithFunctionResultStreaming(String model, String systemPrompt,
+                                                              List<Map<String, Object>> conversationHistory,
+                                                              Double temperature, Integer maxTokens,
+                                                              List<Map<String, Object>> tools) {
+        // First check if more function calls are needed (non-streaming)
+        LlmChatResult result = continueWithFunctionResult(model, systemPrompt, conversationHistory,
+                temperature, maxTokens, tools);
+
+        // If function calls are requested, return them
+        if (result.hasFunctionCalls()) {
+            return result;
+        }
+
+        // If we already have content from the non-streaming call, use it directly
+        // This avoids making a duplicate API call
+        if (result.getContent() != null && !result.getContent().isEmpty()) {
+            log.debug("Using non-streaming response content directly");
+            return result;
+        }
+
+        // Only make streaming call if we don't have content yet (edge case)
+        Flux<String> stream = continueWithFunctionResultStream(model, systemPrompt, conversationHistory,
+                temperature, maxTokens, tools);
+        return LlmChatResult.streamingResponse(stream);
+    }
+
+    /**
+     * Stream the continuation after function results.
+     */
+    private Flux<String> continueWithFunctionResultStream(String model, String systemPrompt,
+                                                           List<Map<String, Object>> conversationHistory,
+                                                           Double temperature, Integer maxTokens,
+                                                           List<Map<String, Object>> tools) {
+        try {
+            ChatCompletionRequest request = buildContinueRequest(model, systemPrompt, conversationHistory,
+                    temperature, maxTokens, tools, true);
+
+            return webClient.post()
+                    .uri("/v1/chat/completions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToFlux(String.class)
+                    .timeout(Duration.ofMinutes(5))
+                    .mapNotNull(this::extractStreamContent)
+                    .filter(content -> !content.isEmpty())
+                    .onErrorResume(e -> {
+                        log.error("Continue stream failed: {}", e.getMessage());
+                        return Flux.error(new RuntimeException("Continue stream failed: " + e.getMessage(), e));
+                    });
+        } catch (Exception e) {
+            log.error("Continue stream setup failed: {}", e.getMessage());
+            return Flux.error(new RuntimeException("Continue stream setup failed: " + e.getMessage(), e));
+        }
+    }
+
+    @Override
     public LlmChatResult continueWithFunctionResult(String model, String systemPrompt,
                                                      List<Map<String, Object>> conversationHistory,
                                                      Double temperature, Integer maxTokens,
                                                      List<Map<String, Object>> tools) {
         try {
-            ChatCompletionRequest request = new ChatCompletionRequest();
-            request.setModel(model);
-            request.setStream(false);
-            request.setTemperature(temperature != null ? temperature : 0.7);
-            request.setMaxTokens(maxTokens != null ? maxTokens : 2048);
-
-            // Build messages list
-            List<ChatMessage> messages = new ArrayList<>();
-
-            // Add system message
-            if (systemPrompt != null && !systemPrompt.isEmpty()) {
-                ChatMessage systemMsg = new ChatMessage();
-                systemMsg.setRole("system");
-                systemMsg.setContent(systemPrompt);
-                messages.add(systemMsg);
-            }
-
-            // Add conversation history
-            for (Map<String, Object> historyMsg : conversationHistory) {
-                ChatMessage msg = new ChatMessage();
-                msg.setRole((String) historyMsg.get("role"));
-                msg.setContent((String) historyMsg.get("content"));
-
-                // Handle tool call ID for tool responses
-                if (historyMsg.containsKey("tool_call_id")) {
-                    msg.setToolCallId((String) historyMsg.get("tool_call_id"));
-                }
-
-                // Handle tool calls for assistant messages
-                if (historyMsg.containsKey("tool_calls")) {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> toolCallsRaw = (List<Map<String, Object>>) historyMsg.get("tool_calls");
-                    List<ToolCall> toolCalls = new ArrayList<>();
-                    for (Map<String, Object> tc : toolCallsRaw) {
-                        ToolCall toolCall = new ToolCall();
-                        toolCall.setId((String) tc.get("id"));
-                        toolCall.setType((String) tc.get("type"));
-
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> functionMap = (Map<String, Object>) tc.get("function");
-                        if (functionMap != null) {
-                            ToolCallFunction function = new ToolCallFunction();
-                            function.setName((String) functionMap.get("name"));
-                            Object args = functionMap.get("arguments");
-                            if (args instanceof String) {
-                                function.setArguments((String) args);
-                            } else if (args != null) {
-                                function.setArguments(objectMapper.writeValueAsString(args));
-                            }
-                            toolCall.setFunction(function);
-                        }
-                        toolCalls.add(toolCall);
-                    }
-                    msg.setToolCalls(toolCalls);
-                }
-
-                messages.add(msg);
-            }
-
-            request.setMessages(messages);
-
-            if (tools != null && !tools.isEmpty()) {
-                request.setTools(tools);
-            }
+            ChatCompletionRequest request = buildContinueRequest(model, systemPrompt, conversationHistory,
+                    temperature, maxTokens, tools, false);
 
             ChatCompletionResponse response = webClient.post()
                     .uri("/v1/chat/completions")
@@ -297,6 +309,82 @@ public class OpenAICompatibleConnector implements LlmConnector {
             log.error("Continue with function result failed: {}", e.getMessage());
             throw new RuntimeException("Continue with function result failed: " + e.getMessage(), e);
         }
+    }
+
+    private ChatCompletionRequest buildContinueRequest(String model, String systemPrompt,
+                                                        List<Map<String, Object>> conversationHistory,
+                                                        Double temperature, Integer maxTokens,
+                                                        List<Map<String, Object>> tools, boolean stream) {
+        ChatCompletionRequest request = new ChatCompletionRequest();
+        request.setModel(model);
+        request.setStream(stream);
+        request.setTemperature(temperature != null ? temperature : 0.7);
+        request.setMaxTokens(maxTokens != null ? maxTokens : 2048);
+
+        // Build messages list
+        List<ChatMessage> messages = new ArrayList<>();
+
+        // Add system message
+        if (systemPrompt != null && !systemPrompt.isEmpty()) {
+            ChatMessage systemMsg = new ChatMessage();
+            systemMsg.setRole("system");
+            systemMsg.setContent(systemPrompt);
+            messages.add(systemMsg);
+        }
+
+        // Add conversation history
+        for (Map<String, Object> historyMsg : conversationHistory) {
+            ChatMessage msg = new ChatMessage();
+            msg.setRole((String) historyMsg.get("role"));
+            msg.setContent((String) historyMsg.get("content"));
+
+            // Handle tool call ID for tool responses
+            if (historyMsg.containsKey("tool_call_id")) {
+                msg.setToolCallId((String) historyMsg.get("tool_call_id"));
+            }
+
+            // Handle tool calls for assistant messages
+            if (historyMsg.containsKey("tool_calls")) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> toolCallsRaw = (List<Map<String, Object>>) historyMsg.get("tool_calls");
+                List<ToolCall> toolCalls = new ArrayList<>();
+                for (Map<String, Object> tc : toolCallsRaw) {
+                    ToolCall toolCall = new ToolCall();
+                    toolCall.setId((String) tc.get("id"));
+                    toolCall.setType((String) tc.get("type"));
+
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> functionMap = (Map<String, Object>) tc.get("function");
+                    if (functionMap != null) {
+                        ToolCallFunction function = new ToolCallFunction();
+                        function.setName((String) functionMap.get("name"));
+                        Object args = functionMap.get("arguments");
+                        if (args instanceof String) {
+                            function.setArguments((String) args);
+                        } else if (args != null) {
+                            try {
+                                function.setArguments(objectMapper.writeValueAsString(args));
+                            } catch (JsonProcessingException e) {
+                                log.warn("Failed to serialize arguments: {}", e.getMessage());
+                            }
+                        }
+                        toolCall.setFunction(function);
+                    }
+                    toolCalls.add(toolCall);
+                }
+                msg.setToolCalls(toolCalls);
+            }
+
+            messages.add(msg);
+        }
+
+        request.setMessages(messages);
+
+        if (tools != null && !tools.isEmpty()) {
+            request.setTools(tools);
+        }
+
+        return request;
     }
 
     private ChatCompletionRequest buildChatRequest(String model, String systemPrompt, String userMessage,

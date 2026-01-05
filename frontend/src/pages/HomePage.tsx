@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 
 export default function HomePage() {
-  const { t } = useTranslation();
+  const handleComingSoon = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    alert('추후 구현 예정입니다.');
+  };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
@@ -21,13 +23,13 @@ export default function HomePage() {
                 to="/login"
                 className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
-                {t('auth.login', 'Login')}
+                로그인
               </Link>
               <Link
                 to="/register"
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
               >
-                {t('auth.register', 'Get Started')}
+                시작하기
               </Link>
             </div>
           </div>
@@ -40,30 +42,32 @@ export default function HomePage() {
           <div className="text-center">
             <div className="inline-flex items-center px-4 py-2 bg-primary-100 dark:bg-primary-900/30 rounded-full text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
               <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-              {t('landing.badge', 'Now Available')}
+              지금 바로 사용 가능
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">
-              {t('landing.heroTitle', 'Build Intelligent AI Agents')}
+              나만의 AI 에이전트를
               <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-purple-600">
-                {t('landing.heroHighlight', 'Without Writing Code')}
+                코딩 없이 만들어보세요
               </span>
             </h1>
             <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-3xl mx-auto leading-relaxed">
-              {t('landing.heroDescription', 'Create, customize, and deploy AI agents with custom functions and knowledge bases. Integrate with any LLM provider and build powerful conversational experiences.')}
+              커스텀 함수와 지식베이스를 활용해 AI 에이전트를 생성하고 배포하세요.
+              <br />
+              다양한 LLM 제공자와 연동하여 강력한 대화형 경험을 구축할 수 있습니다.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <Link
                 to="/register"
                 className="px-8 py-4 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-semibold text-lg shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 hover:-translate-y-0.5"
               >
-                {t('landing.startFree', 'Start Free')}
+                회원가입
               </Link>
               <Link
                 to="/login"
                 className="px-8 py-4 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-all font-semibold text-lg border border-gray-200 dark:border-gray-700"
               >
-                {t('landing.viewDemo', 'View Demo')}
+                로그인
               </Link>
             </div>
           </div>
@@ -112,10 +116,10 @@ export default function HomePage() {
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-              {t('landing.featuresTitle', 'Everything You Need')}
+              주요 기능
             </h2>
             <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              {t('landing.featuresDescription', 'Build powerful AI agents with our comprehensive platform')}
+              강력한 AI 에이전트를 만들기 위한 모든 도구를 제공합니다
             </p>
           </div>
 
@@ -128,10 +132,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature1Title', 'Custom AI Agents')}
+                커스텀 AI 에이전트
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature1Desc', 'Create agents with custom personalities, system prompts, and behaviors tailored to your needs.')}
+                맞춤형 성격, 시스템 프롬프트, 동작 방식을 설정하여 나만의 에이전트를 만들 수 있습니다.
               </p>
             </div>
 
@@ -143,10 +147,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature2Title', 'Function Calling')}
+                함수 호출
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature2Desc', 'Extend agent capabilities with custom functions, API integrations, and code execution.')}
+                커스텀 함수, API 연동, 코드 실행을 통해 에이전트의 기능을 확장할 수 있습니다.
               </p>
             </div>
 
@@ -158,10 +162,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature3Title', 'Knowledge Bases')}
+                지식베이스
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature3Desc', 'Upload documents and create searchable knowledge bases for context-aware responses.')}
+                문서를 업로드하여 검색 가능한 지식베이스를 구축하고, 맥락에 맞는 답변을 제공합니다.
               </p>
             </div>
 
@@ -173,10 +177,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature4Title', 'Multi-LLM Support')}
+                다양한 LLM 지원
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature4Desc', 'Connect to OpenAI, Anthropic, Google, Ollama, and other LLM providers.')}
+                OpenAI, Anthropic, Google, Ollama 등 다양한 LLM 제공자와 연동할 수 있습니다.
               </p>
             </div>
 
@@ -188,10 +192,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature5Title', 'Embeddable Widget')}
+                임베드 위젯
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature5Desc', 'Embed your AI agents on any website with a simple code snippet.')}
+                간단한 코드 스니펫으로 어떤 웹사이트에서든 AI 에이전트를 임베드할 수 있습니다.
               </p>
             </div>
 
@@ -203,10 +207,10 @@ export default function HomePage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
-                {t('landing.feature6Title', 'Usage Analytics')}
+                사용량 분석
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                {t('landing.feature6Desc', 'Track conversations, token usage, and agent performance with detailed analytics.')}
+                대화 내역, 토큰 사용량, 에이전트 성능을 상세한 분석 리포트로 확인할 수 있습니다.
               </p>
             </div>
           </div>
@@ -218,10 +222,10 @@ export default function HomePage() {
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-              {t('landing.useCasesTitle', 'Use Cases')}
+              활용 사례
             </h2>
             <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              {t('landing.useCasesDescription', 'See how teams are using AI agents to transform their workflows')}
+              다양한 분야에서 AI 에이전트를 활용하여 업무를 혁신하세요
             </p>
           </div>
 
@@ -232,16 +236,16 @@ export default function HomePage() {
                   <span className="text-2xl">💬</span>
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {t('landing.useCase1Title', 'Customer Support')}
+                  고객 지원
                 </h3>
               </div>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {t('landing.useCase1Desc', 'Automate customer inquiries with AI agents that understand your products and policies.')}
+                제품과 정책을 이해하는 AI 에이전트로 고객 문의를 자동화하세요.
               </p>
               <ul className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 24/7 availability</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Instant responses</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Consistent quality</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 24시간 연중무휴 응대</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 즉각적인 답변 제공</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 일관된 서비스 품질</li>
               </ul>
             </div>
 
@@ -251,16 +255,16 @@ export default function HomePage() {
                   <span className="text-2xl">📊</span>
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {t('landing.useCase2Title', 'Data Analysis')}
+                  데이터 분석
                 </h3>
               </div>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {t('landing.useCase2Desc', 'Query your data with natural language and get instant insights.')}
+                자연어로 데이터를 조회하고 즉시 인사이트를 얻으세요.
               </p>
               <ul className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Natural language queries</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Custom visualizations</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Automated reports</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 자연어 데이터 조회</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 맞춤형 시각화</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 자동 리포트 생성</li>
               </ul>
             </div>
 
@@ -270,16 +274,16 @@ export default function HomePage() {
                   <span className="text-2xl">🎓</span>
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {t('landing.useCase3Title', 'Education & Training')}
+                  교육 및 트레이닝
                 </h3>
               </div>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {t('landing.useCase3Desc', 'Create personalized learning experiences with AI tutors and assistants.')}
+                AI 튜터와 학습 도우미로 맞춤형 학습 경험을 제공하세요.
               </p>
               <ul className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Personalized learning</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Interactive Q&A</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Progress tracking</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 개인 맞춤 학습</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 인터랙티브 Q&A</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 학습 진도 추적</li>
               </ul>
             </div>
 
@@ -289,16 +293,16 @@ export default function HomePage() {
                   <span className="text-2xl">🔧</span>
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {t('landing.useCase4Title', 'Developer Tools')}
+                  개발자 도구
                 </h3>
               </div>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {t('landing.useCase4Desc', 'Build coding assistants that understand your codebase and documentation.')}
+                코드베이스와 문서를 이해하는 코딩 어시스턴트를 구축하세요.
               </p>
               <ul className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Code explanations</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Documentation search</li>
-                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> Bug fixing help</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 코드 설명</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 문서 검색</li>
+                <li className="flex items-center"><span className="text-green-500 mr-2">✓</span> 버그 수정 지원</li>
               </ul>
             </div>
           </div>
@@ -309,17 +313,17 @@ export default function HomePage() {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-primary-600 to-purple-600">
         <div className="container mx-auto max-w-4xl text-center">
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
-            {t('landing.ctaTitle', 'Ready to Build Your AI Agent?')}
+            지금 바로 AI 에이전트를 만들어보세요
           </h2>
           <p className="text-lg text-white/80 mb-10 max-w-2xl mx-auto">
-            {t('landing.ctaDescription', 'Join thousands of developers and businesses building intelligent AI experiences.')}
+            수많은 개발자와 기업들이 AI Agent 플랫폼으로 지능형 AI 경험을 구축하고 있습니다.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <Link
               to="/register"
               className="px-8 py-4 bg-white text-primary-600 rounded-xl hover:bg-gray-100 transition-all font-semibold text-lg shadow-lg"
             >
-              {t('landing.ctaButton', 'Get Started Free')}
+              무료로 시작하기
             </Link>
           </div>
         </div>
@@ -337,35 +341,35 @@ export default function HomePage() {
                 <span className="text-xl font-bold text-white">AI Agent</span>
               </div>
               <p className="text-sm">
-                {t('landing.footerTagline', 'Build intelligent AI agents for your business.')}
+                비즈니스를 위한 지능형 AI 에이전트를 구축하세요.
               </p>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">{t('landing.footerProduct', 'Product')}</h4>
+              <h4 className="text-white font-semibold mb-4">제품</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerFeatures', 'Features')}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerPricing', 'Pricing')}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerDocs', 'Documentation')}</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">기능 소개</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">요금제</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">문서</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">{t('landing.footerCompany', 'Company')}</h4>
+              <h4 className="text-white font-semibold mb-4">회사</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerAbout', 'About')}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerBlog', 'Blog')}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerCareers', 'Careers')}</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">소개</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">블로그</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">채용</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">{t('landing.footerLegal', 'Legal')}</h4>
+              <h4 className="text-white font-semibold mb-4">법적 고지</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerPrivacy', 'Privacy')}</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">{t('landing.footerTerms', 'Terms')}</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">개인정보처리방침</a></li>
+                <li><a href="#" onClick={handleComingSoon} className="hover:text-white transition-colors">이용약관</a></li>
               </ul>
             </div>
           </div>
           <div className="pt-8 border-t border-gray-800 text-sm text-center">
-            <p>&copy; {new Date().getFullYear()} AI Agent Platform. {t('landing.footerRights', 'All rights reserved.')}</p>
+            <p>&copy; {new Date().getFullYear()} AI Agent Platform. All rights reserved.</p>
           </div>
         </div>
       </footer>

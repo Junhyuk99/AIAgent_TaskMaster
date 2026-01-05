@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import chatService from '../../services/chatService';
-import type { ChatMessage } from '../../services/chatService';
+import type { ChatMessage, DocumentSource, FunctionExecution } from '../../services/chatService';
 import { useChatStore } from '../../stores/chatStore';
+
+interface ActiveFunction {
+  name: string;
+  status: 'calling' | 'completed' | 'failed';
+  executionTimeMs?: number;
+}
 
 interface ChatInterfaceProps {
   agentId: number;
@@ -20,7 +26,12 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
-  const [useStreaming, setUseStreaming] = useState(true);
+  const [useStreaming] = useState(true);
+  const [activeFunctions, setActiveFunctions] = useState<ActiveFunction[]>([]);
+  const [currentStage, setCurrentStage] = useState<string>('');
+  // These are collected during streaming but only used at completion
+  const streamingSourcesRef = useRef<DocumentSource[]>([]);
+  const streamingExecutionsRef = useRef<FunctionExecution[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -49,37 +60,86 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
     const historyForApi: ChatMessage[] = messages.map(({ role, content }) => ({ role, content }));
 
     if (useStreaming) {
-      // Streaming mode - no sources available
+      // Streaming mode with function calling support
       try {
         let fullResponse = '';
+        let collectedSources: DocumentSource[] = [];
+        let collectedExecutions: FunctionExecution[] = [];
 
-        await chatService.chatStream(
+        // Reset streaming state
+        setActiveFunctions([]);
+        setCurrentStage(t('chat.stages.thinking'));
+        streamingSourcesRef.current = [];
+        streamingExecutionsRef.current = [];
+
+        await chatService.chatStreamWithEvents(
           agentId,
           {
             message: userMessage,
             conversationId: conversationId || undefined,
             history: historyForApi,
           },
-          (chunk) => {
-            fullResponse += chunk;
-            setStreamingContent(fullResponse);
-          },
-          (err) => {
-            setError(err.message || 'Failed to get response');
-            setIsLoading(false);
-          },
-          () => {
-            // On complete
-            if (fullResponse) {
-              addMessage(agentId, { role: 'assistant', content: fullResponse });
-            }
-            setStreamingContent('');
-            setIsLoading(false);
+          {
+            onText: (text) => {
+              fullResponse += text;
+              setStreamingContent(fullResponse);
+              setCurrentStage(t('chat.stages.responding'));
+            },
+            onFunctionCall: (name) => {
+              setActiveFunctions(prev => [...prev, { name, status: 'calling' }]);
+              // Show appropriate stage based on function name
+              if (name === 'search_knowledge_base') {
+                setCurrentStage(t('chat.stages.searchingKB'));
+              } else {
+                setCurrentStage(t('chat.stages.executingFunction', { name }));
+              }
+            },
+            onFunctionResult: (name, success, executionTimeMs) => {
+              setActiveFunctions(prev =>
+                prev.map(f =>
+                  f.name === name && f.status === 'calling'
+                    ? { ...f, status: success ? 'completed' : 'failed', executionTimeMs }
+                    : f
+                )
+              );
+            },
+            onSources: (sources) => {
+              collectedSources = sources;
+              streamingSourcesRef.current = sources;
+            },
+            onFunctionExecutions: (executions) => {
+              collectedExecutions = executions;
+              streamingExecutionsRef.current = executions;
+            },
+            onError: (err) => {
+              setError(err.message || 'Failed to get response');
+              setIsLoading(false);
+              setActiveFunctions([]);
+              setCurrentStage('');
+            },
+            onComplete: () => {
+              if (fullResponse) {
+                addMessage(agentId, {
+                  role: 'assistant',
+                  content: fullResponse,
+                  sources: collectedSources.length > 0 ? collectedSources : undefined,
+                  functionExecutions: collectedExecutions.length > 0 ? collectedExecutions : undefined,
+                });
+              }
+              setStreamingContent('');
+              setActiveFunctions([]);
+              setCurrentStage('');
+              streamingSourcesRef.current = [];
+              streamingExecutionsRef.current = [];
+              setIsLoading(false);
+            },
           }
         );
       } catch {
         setError('Failed to send message');
         setIsLoading(false);
+        setActiveFunctions([]);
+        setCurrentStage('');
       }
     } else {
       // Non-streaming mode - sources available
@@ -95,6 +155,7 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           role: 'assistant',
           content: response.response,
           sources: response.sources,
+          functionExecutions: response.functionExecutions,
         });
         setIsLoading(false);
       } catch (err) {
@@ -135,15 +196,6 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex items-center text-xs text-gray-500 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={useStreaming}
-              onChange={(e) => setUseStreaming(e.target.checked)}
-              className="mr-1.5 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            {t('common.stream')}
-          </label>
           <button
             onClick={handleClearChat}
             className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -159,33 +211,14 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
           <div className="text-center text-gray-500 dark:text-gray-400 py-8">
             <div className="text-4xl mb-2">&#128172;</div>
             <p>{t('chat.startConversation')}</p>
-            <p className="text-xs mt-2">
-              {useStreaming
-                ? t('chat.streamingMode')
-                : t('chat.standardMode')}
-            </p>
           </div>
         )}
 
         {messages.map((message, index) => (
           <div key={index}>
-            <div
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                }`}
-              >
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              </div>
-            </div>
-
-            {/* Sources display for assistant messages */}
+            {/* Sources display ABOVE assistant messages */}
             {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-              <div className="flex justify-start mt-2 ml-2">
+              <div className="flex justify-start mb-1 ml-2">
                 <div className="max-w-[80%]">
                   <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                     &#128218; {t('chat.sources')}:
@@ -220,6 +253,62 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
                 </div>
               </div>
             )}
+
+            <div
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              </div>
+            </div>
+
+            {/* Function executions display for assistant messages */}
+            {message.role === 'assistant' && message.functionExecutions && message.functionExecutions.length > 0 && (
+              <div className="flex justify-start mt-2 ml-2">
+                <div className="max-w-[80%]">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    &#9889; {t('chat.usedFunctions')}:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {message.functionExecutions.map((execution, idx) => (
+                      <div
+                        key={idx}
+                        className={`inline-flex items-center px-2 py-1 rounded text-xs ${
+                          execution.error
+                            ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                            : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                        }`}
+                        title={execution.error || `${execution.executionTimeMs}ms`}
+                      >
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                          />
+                        </svg>
+                        {execution.functionName}
+                        <span className="ml-1 opacity-60">
+                          ({execution.executionTimeMs}ms)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
@@ -233,7 +322,44 @@ export default function ChatInterface({ agentId, agentName }: ChatInterfaceProps
         )}
 
         {isLoading && !streamingContent && (
-          <div className="flex justify-start">
+          <div className="flex flex-col items-start gap-2">
+            {/* Current stage indicator */}
+            {currentStage && (
+              <div className="flex items-center gap-2 ml-2 text-sm text-gray-600 dark:text-gray-300">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>{currentStage}</span>
+              </div>
+            )}
+            {/* Active function calls indicator */}
+            {activeFunctions.length > 0 && (
+              <div className="flex flex-wrap gap-2 ml-2">
+                {activeFunctions.map((fn, idx) => (
+                  <div
+                    key={idx}
+                    className={`inline-flex items-center px-2 py-1 rounded text-xs ${
+                      fn.status === 'calling'
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 animate-pulse'
+                        : fn.status === 'completed'
+                        ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                        : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                    }`}
+                  >
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    {fn.status === 'calling' ? t('chat.callingFunction') : fn.name}
+                    {fn.status === 'calling' && `: ${fn.name}`}
+                    {fn.executionTimeMs && (
+                      <span className="ml-1 opacity-60">({fn.executionTimeMs}ms)</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Loading dots */}
             <div className="rounded-lg px-4 py-2 bg-gray-100 dark:bg-gray-700">
               <div className="flex space-x-2">
                 <div

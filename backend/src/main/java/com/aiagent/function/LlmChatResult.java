@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -17,9 +18,14 @@ import java.util.List;
 public class LlmChatResult {
 
     /**
-     * The text content of the response (may be null if function calls present).
+     * The text content of the response (may be null if function calls present or streaming).
      */
     private String content;
+
+    /**
+     * Streaming content (used for streaming responses).
+     */
+    private Flux<String> contentStream;
 
     /**
      * List of function calls requested by the LLM.
@@ -30,6 +36,11 @@ public class LlmChatResult {
      * Whether the response is complete or requires function execution.
      */
     private boolean requiresFunctionExecution;
+
+    /**
+     * Whether this is a streaming response.
+     */
+    private boolean streaming;
 
     /**
      * The finish reason from the LLM (e.g., "stop", "tool_calls").
@@ -44,12 +55,32 @@ public class LlmChatResult {
     }
 
     /**
+     * Check if this is a streaming response.
+     */
+    public boolean isStreaming() {
+        return streaming && contentStream != null;
+    }
+
+    /**
      * Create a simple text response result.
      */
     public static LlmChatResult textResponse(String content) {
         return LlmChatResult.builder()
                 .content(content)
                 .requiresFunctionExecution(false)
+                .streaming(false)
+                .finishReason("stop")
+                .build();
+    }
+
+    /**
+     * Create a streaming text response result.
+     */
+    public static LlmChatResult streamingResponse(Flux<String> contentStream) {
+        return LlmChatResult.builder()
+                .contentStream(contentStream)
+                .requiresFunctionExecution(false)
+                .streaming(true)
                 .finishReason("stop")
                 .build();
     }
@@ -61,6 +92,7 @@ public class LlmChatResult {
         return LlmChatResult.builder()
                 .functionCalls(calls)
                 .requiresFunctionExecution(true)
+                .streaming(false)
                 .finishReason("tool_calls")
                 .build();
     }

@@ -331,7 +331,15 @@
     "conversationHistory": "Conversation History",
     "streamingMode": "Streaming mode (no sources)",
     "standardMode": "Standard mode (with sources)",
-    "sources": "Sources"
+    "sources": "Sources",
+    "usedFunctions": "Functions used",
+    "callingFunction": "Calling",
+    "stages": {
+      "thinking": "Analyzing question...",
+      "searchingKB": "Searching knowledge base...",
+      "executingFunction": "Executing {{name}}...",
+      "responding": "Generating response..."
+    }
   },
   "settings": {
     "title": "Settings",

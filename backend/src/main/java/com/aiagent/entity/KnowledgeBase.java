@@ -41,7 +41,7 @@ public class KnowledgeBase extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "chunking_strategy")
     @Builder.Default
-    private ChunkingStrategy chunkingStrategy = ChunkingStrategy.FIXED_SIZE;
+    private ChunkingStrategy chunkingStrategy = ChunkingStrategy.PARAGRAPH;
 
     @Column(name = "is_active")
     @Builder.Default

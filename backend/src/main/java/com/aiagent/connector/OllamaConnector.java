@@ -260,16 +260,37 @@ public class OllamaConnector implements LlmConnector {
             // Add tools if provided
             if (tools != null && !tools.isEmpty()) {
                 request.setTools(tools);
+                log.info("Sending {} tools to Ollama model {}", tools.size(), model);
+                for (Map<String, Object> tool : tools) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> func = (Map<String, Object>) tool.get("function");
+                    if (func != null) {
+                        log.info("  Tool: {}", func.get("name"));
+                    }
+                }
             }
 
-            OllamaChatResponse response = webClient.post()
+            // Log the raw request for debugging
+            try {
+                String requestJson = objectMapper.writeValueAsString(request);
+                log.debug("Ollama request: {}", requestJson);
+            } catch (Exception e) {
+                log.debug("Failed to serialize request for logging");
+            }
+
+            String rawResponse = webClient.post()
                     .uri("/api/chat")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(request)
                     .retrieve()
-                    .bodyToMono(OllamaChatResponse.class)
+                    .bodyToMono(String.class)
                     .timeout(Duration.ofMinutes(5))
                     .block();
+
+            log.info("Ollama raw response: {}", rawResponse != null && rawResponse.length() > 500
+                    ? rawResponse.substring(0, 500) + "..." : rawResponse);
+
+            OllamaChatResponse response = objectMapper.readValue(rawResponse, OllamaChatResponse.class);
 
             return parseOllamaResponse(response);
 

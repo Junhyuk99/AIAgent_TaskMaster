@@ -320,7 +320,7 @@
     "upload": {
       "title": "문서 업로드",
       "dragDrop": "파일을 여기에 드래그 앤 드롭하거나 클릭하여 찾아보기",
-      "supportedFormats": "PDF, TXT, MD, DOC, DOCX 지원 (최대 10MB)",
+      "supportedFormats": "PDF, TXT, MD, DOC, DOCX 지원 (최대 50MB)",
       "browseFiles": "파일 찾아보기",
       "uploading": "업로드 중..."
     },
@@ -419,7 +419,15 @@
     "conversationHistory": "대화 기록",
     "streamingMode": "스트리밍 모드 (출처 없음)",
     "standardMode": "표준 모드 (출처 포함)",
-    "sources": "출처"
+    "sources": "출처",
+    "usedFunctions": "사용된 함수",
+    "callingFunction": "호출 중",
+    "stages": {
+      "thinking": "질문 분석 중...",
+      "searchingKB": "지식베이스 검색 중...",
+      "executingFunction": "{{name}} 함수 실행 중...",
+      "responding": "답변 생성 중..."
+    }
   },
   "settings": {
     "title": "설정",
