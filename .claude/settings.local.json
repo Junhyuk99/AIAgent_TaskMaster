@@ -57,7 +57,9 @@
       "Bash(docker exec:*)",
       "Bash(docker logs:*)",
       "Bash(timeout 30 docker-compose:*)",
-      "Bash(timeout 20 docker-compose:*)"
+      "Bash(timeout 20 docker-compose:*)",
+      "Bash(wc -l \"C:\\Projects\\VSCode\\AIAgent_TaskMaster\\backend\\src\\main\\java\\com\\aiagent\\service\"/*.java)",
+      "WebSearch"
     ]
   },
   "enableAllProjectMcpServers": true,

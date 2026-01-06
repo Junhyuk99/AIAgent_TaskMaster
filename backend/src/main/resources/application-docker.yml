@@ -78,10 +78,18 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost,http://localhost:8088,https://localhost:8088}
 
+# Ollama Configuration
+ollama:
+  url: ${OLLAMA_HOST:http://210.107.60.21:11434}
+  model: ${OLLAMA_MODEL:gpt-oss:120b}
+  num-ctx: ${OLLAMA_NUM_CTX:8192}
+  timeout: ${OLLAMA_TIMEOUT:180}
+  retry-count: ${OLLAMA_RETRY_COUNT:3}
+
 # Embedding Configuration
 embedding:
   ollama:
-    url: ${OLLAMA_HOST:http://ollama:11434}
+    url: ${OLLAMA_HOST:http://210.107.60.21:11434}
     model: ${EMBEDDING_MODEL:nomic-embed-text}
     dimension: ${EMBEDDING_DIMENSION:768}
 

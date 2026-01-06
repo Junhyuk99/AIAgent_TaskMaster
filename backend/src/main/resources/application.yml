@@ -77,10 +77,18 @@ app:
   oauth2:
     redirect-uri: ${OAUTH2_REDIRECT_URI:http://localhost:5173/oauth2/callback}
 
+# Ollama Configuration
+ollama:
+  url: ${OLLAMA_URL:http://210.107.60.21:11434}
+  model: ${OLLAMA_MODEL:gpt-oss:120b}
+  num-ctx: ${OLLAMA_NUM_CTX:8192}
+  timeout: ${OLLAMA_TIMEOUT:180}
+  retry-count: ${OLLAMA_RETRY_COUNT:3}
+
 # Embedding Configuration
 embedding:
   ollama:
-    url: ${OLLAMA_URL:http://localhost:11434}
+    url: ${OLLAMA_URL:http://210.107.60.21:11434}
     model: ${EMBEDDING_MODEL:nomic-embed-text}
     dimension: ${EMBEDDING_DIMENSION:768}
 

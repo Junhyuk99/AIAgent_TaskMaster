@@ -27,8 +27,21 @@ public class OllamaConnector implements LlmConnector {
     private final String baseUrl;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Configurable settings with defaults
+    private final int numCtx;
+    private final int timeoutSeconds;
+    private final int retryCount;
+
     public OllamaConnector(String baseUrl, String apiKey) {
+        this(baseUrl, apiKey, 8192, 180, 3);
+    }
+
+    public OllamaConnector(String baseUrl, String apiKey, int numCtx, int timeoutSeconds, int retryCount) {
         this.baseUrl = baseUrl;
+        this.numCtx = numCtx;
+        this.timeoutSeconds = timeoutSeconds;
+        this.retryCount = retryCount;
+
         WebClient.Builder builder = WebClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Content-Type", "application/json");
@@ -38,6 +51,8 @@ public class OllamaConnector implements LlmConnector {
         }
 
         this.webClient = builder.build();
+        log.info("OllamaConnector initialized: url={}, numCtx={}, timeout={}s, retryCount={}",
+                baseUrl, numCtx, timeoutSeconds, retryCount);
     }
 
     @Override
@@ -104,42 +119,101 @@ public class OllamaConnector implements LlmConnector {
 
     @Override
     public String chat(String model, String systemPrompt, String userMessage, Double temperature, Integer maxTokens) {
-        try {
-            OllamaChatRequest request = new OllamaChatRequest();
-            request.setModel(model);
-            request.setStream(false);
+        Exception lastError = null;
 
-            OllamaChatMessage systemMsg = new OllamaChatMessage();
-            systemMsg.setRole("system");
-            systemMsg.setContent(systemPrompt != null ? systemPrompt : "");
+        // Try chat API with retries
+        for (int attempt = 1; attempt <= retryCount; attempt++) {
+            try {
+                OllamaChatRequest request = new OllamaChatRequest();
+                request.setModel(model);
+                request.setStream(false);
 
-            OllamaChatMessage userMsg = new OllamaChatMessage();
-            userMsg.setRole("user");
-            userMsg.setContent(userMessage);
+                OllamaChatMessage systemMsg = new OllamaChatMessage();
+                systemMsg.setRole("system");
+                systemMsg.setContent(systemPrompt != null ? systemPrompt : "");
 
-            request.setMessages(List.of(systemMsg, userMsg));
-            request.setOptions(Map.of(
-                    "temperature", temperature != null ? temperature : 0.7,
-                    "num_predict", maxTokens != null ? maxTokens : 2048
-            ));
+                OllamaChatMessage userMsg = new OllamaChatMessage();
+                userMsg.setRole("user");
+                userMsg.setContent(userMessage);
 
-            OllamaChatResponse response = webClient.post()
-                    .uri("/api/chat")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(OllamaChatResponse.class)
-                    .timeout(Duration.ofMinutes(5))
-                    .block();
+                request.setMessages(List.of(systemMsg, userMsg));
+                request.setOptions(Map.of(
+                        "temperature", temperature != null ? temperature : 0.7,
+                        "num_predict", maxTokens != null ? maxTokens : 2048,
+                        "num_ctx", numCtx
+                ));
 
-            if (response != null && response.getMessage() != null) {
-                return response.getMessage().getContent();
+                OllamaChatResponse response = webClient.post()
+                        .uri("/api/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(request)
+                        .retrieve()
+                        .bodyToMono(OllamaChatResponse.class)
+                        .timeout(Duration.ofSeconds(timeoutSeconds))
+                        .block();
+
+                if (response != null && response.getMessage() != null) {
+                    return response.getMessage().getContent();
+                }
+                return "";
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("Chat API attempt {}/{} failed: {}", attempt, retryCount, e.getMessage());
+                if (attempt < retryCount) {
+                    try {
+                        Thread.sleep(400L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
             }
-            return "";
-        } catch (Exception e) {
-            log.error("Chat failed: {}", e.getMessage());
-            throw new RuntimeException("Chat request failed: " + e.getMessage(), e);
         }
+
+        // Fallback to generate API with retries
+        log.info("Chat API failed, falling back to generate API");
+        String prompt = String.format("### 시스템 지시 ###\n%s\n\n### 사용자 입력 ###\n%s\n",
+                systemPrompt != null ? systemPrompt : "", userMessage);
+
+        for (int attempt = 1; attempt <= retryCount; attempt++) {
+            try {
+                OllamaGenerateRequest request = new OllamaGenerateRequest();
+                request.setModel(model);
+                request.setPrompt(prompt);
+                request.setStream(false);
+                request.setOptions(Map.of(
+                        "temperature", temperature != null ? temperature : 0.7,
+                        "num_predict", maxTokens != null ? maxTokens : 2048,
+                        "num_ctx", numCtx
+                ));
+
+                OllamaGenerateResponse response = webClient.post()
+                        .uri("/api/generate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(request)
+                        .retrieve()
+                        .bodyToMono(OllamaGenerateResponse.class)
+                        .timeout(Duration.ofSeconds(timeoutSeconds))
+                        .block();
+
+                if (response != null && response.getResponse() != null) {
+                    return response.getResponse().trim();
+                }
+                return "";
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("Generate API attempt {}/{} failed: {}", attempt, retryCount, e.getMessage());
+                if (attempt < retryCount) {
+                    try {
+                        Thread.sleep(400L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }
+
+        log.error("All Ollama API attempts failed");
+        throw new RuntimeException("Ollama 호출 실패: " + (lastError != null ? lastError.getMessage() : "Unknown error"), lastError);
     }
 
     @Override
@@ -159,7 +233,8 @@ public class OllamaConnector implements LlmConnector {
         request.setMessages(List.of(systemMsg, userMsg));
         request.setOptions(Map.of(
                 "temperature", temperature != null ? temperature : 0.7,
-                "num_predict", maxTokens != null ? maxTokens : 2048
+                "num_predict", maxTokens != null ? maxTokens : 2048,
+                "num_ctx", numCtx
         ));
 
         return webClient.post()
@@ -168,7 +243,7 @@ public class OllamaConnector implements LlmConnector {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .timeout(Duration.ofMinutes(5))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .map(this::extractContentFromStreamResponse)
                 .filter(content -> !content.isEmpty())
                 .onErrorResume(e -> {
@@ -186,7 +261,8 @@ public class OllamaConnector implements LlmConnector {
             request.setStream(false);
             request.setOptions(Map.of(
                     "temperature", temperature != null ? temperature : 0.7,
-                    "num_predict", maxTokens != null ? maxTokens : 2048
+                    "num_predict", maxTokens != null ? maxTokens : 2048,
+                    "num_ctx", numCtx
             ));
 
             OllamaGenerateResponse response = webClient.post()
@@ -195,7 +271,7 @@ public class OllamaConnector implements LlmConnector {
                     .bodyValue(request)
                     .retrieve()
                     .bodyToMono(OllamaGenerateResponse.class)
-                    .timeout(Duration.ofMinutes(5))
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
                     .block();
 
             if (response != null) {
@@ -216,7 +292,8 @@ public class OllamaConnector implements LlmConnector {
         request.setStream(true);
         request.setOptions(Map.of(
                 "temperature", temperature != null ? temperature : 0.7,
-                "num_predict", maxTokens != null ? maxTokens : 2048
+                "num_predict", maxTokens != null ? maxTokens : 2048,
+                "num_ctx", numCtx
         ));
 
         return webClient.post()
@@ -225,7 +302,7 @@ public class OllamaConnector implements LlmConnector {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .timeout(Duration.ofMinutes(5))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .map(this::extractResponseFromStreamResponse)
                 .filter(content -> !content.isEmpty())
                 .onErrorResume(e -> {
@@ -254,7 +331,8 @@ public class OllamaConnector implements LlmConnector {
             request.setMessages(List.of(systemMsg, userMsg));
             request.setOptions(Map.of(
                     "temperature", temperature != null ? temperature : 0.7,
-                    "num_predict", maxTokens != null ? maxTokens : 2048
+                    "num_predict", maxTokens != null ? maxTokens : 2048,
+                    "num_ctx", numCtx
             ));
 
             // Add tools if provided
@@ -284,7 +362,7 @@ public class OllamaConnector implements LlmConnector {
                     .bodyValue(request)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(Duration.ofMinutes(5))
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
                     .block();
 
             log.info("Ollama raw response: {}", rawResponse != null && rawResponse.length() > 500
@@ -361,7 +439,8 @@ public class OllamaConnector implements LlmConnector {
             request.setMessages(messages);
             request.setOptions(Map.of(
                     "temperature", temperature != null ? temperature : 0.7,
-                    "num_predict", maxTokens != null ? maxTokens : 2048
+                    "num_predict", maxTokens != null ? maxTokens : 2048,
+                    "num_ctx", numCtx
             ));
 
             if (tools != null && !tools.isEmpty()) {
@@ -374,7 +453,7 @@ public class OllamaConnector implements LlmConnector {
                     .bodyValue(request)
                     .retrieve()
                     .bodyToMono(OllamaChatResponse.class)
-                    .timeout(Duration.ofMinutes(5))
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
                     .block();
 
             return parseOllamaResponse(response);

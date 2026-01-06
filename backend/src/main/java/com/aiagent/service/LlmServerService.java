@@ -11,8 +11,8 @@ import com.aiagent.entity.LlmServer;
 import com.aiagent.entity.User;
 import com.aiagent.repository.LlmServerRepository;
 import com.aiagent.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -21,11 +21,30 @@ import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LlmServerService {
 
     private final LlmServerRepository llmServerRepository;
     private final UserRepository userRepository;
+
+    // Ollama configuration
+    private final int ollamaNumCtx;
+    private final int ollamaTimeout;
+    private final int ollamaRetryCount;
+
+    public LlmServerService(
+            LlmServerRepository llmServerRepository,
+            UserRepository userRepository,
+            @Value("${ollama.num-ctx:8192}") int ollamaNumCtx,
+            @Value("${ollama.timeout:180}") int ollamaTimeout,
+            @Value("${ollama.retry-count:3}") int ollamaRetryCount) {
+        this.llmServerRepository = llmServerRepository;
+        this.userRepository = userRepository;
+        this.ollamaNumCtx = ollamaNumCtx;
+        this.ollamaTimeout = ollamaTimeout;
+        this.ollamaRetryCount = ollamaRetryCount;
+        log.info("LlmServerService initialized with Ollama settings: numCtx={}, timeout={}s, retryCount={}",
+                ollamaNumCtx, ollamaTimeout, ollamaRetryCount);
+    }
 
     @Transactional(readOnly = true)
     public List<LlmServerResponse> getAllServers(Long userId) {
@@ -152,7 +171,13 @@ public class LlmServerService {
 
     private LlmConnector createConnector(LlmServer server) {
         return switch (server.getType()) {
-            case OLLAMA -> new OllamaConnector(server.getBaseUrl(), server.getApiKey());
+            case OLLAMA -> new OllamaConnector(
+                    server.getBaseUrl(),
+                    server.getApiKey(),
+                    ollamaNumCtx,
+                    ollamaTimeout,
+                    ollamaRetryCount
+            );
             case VLLM, OPENAI_COMPATIBLE, CUSTOM ->
                 new OpenAICompatibleConnector(server.getBaseUrl(), server.getApiKey());
         };

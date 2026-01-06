@@ -67,9 +67,12 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI:-http://localhost/oauth2/callback}
-      # Embedding (Local Ollama)
-      OLLAMA_URL: http://ollama:11434
-      EMBEDDING_MODEL: nomic-embed-text
+      # Embedding (External Ollama Server)
+      OLLAMA_URL: ${OLLAMA_URL:-http://210.107.60.21:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gpt-oss:120b}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
       # Vector Store
       CHROMA_URL: http://chromadb:8000
       # Upload
