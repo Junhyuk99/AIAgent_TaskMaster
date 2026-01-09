@@ -59,7 +59,7 @@ dependencies {
     implementation 'com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20220608.1'
 
     // JSON Path for response transformation
-    implementation 'com.jayway.jsonpath:json-path:2.9.0'
+    implementation 'com.jayway.jsonpath:json-path:2.10.0'
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
